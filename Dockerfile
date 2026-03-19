@@ -1,5 +1,5 @@
 # NETRA - Refreshable Braille Reading Assistant
-# Base: ARM64 Python 3.12 slim (matches Raspberry Pi 5 target)
+# Base: ARM64 Python 3.12 slim (matches Raspberry Pi 4 target)
 FROM arm64v8/python:3.12-slim
 
 # ── System packages ────────────────────────────────────────────────────────────
