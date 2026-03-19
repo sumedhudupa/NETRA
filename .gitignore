@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.wav
+*.pdf
+*.png
+*.jpg
+piper-models/

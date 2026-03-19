@@ -1,0 +1,13 @@
+{
+  "ollama_host": "172.18.176.1",
+  "ollama_port": 11434,
+  "ollama_model": "gemma2:2b",
+  "piper_model": "/root/piper-models/en_US-lessac-medium.onnx",
+  "docs_dir": "/media/sdcard/docs",
+  "braille_table": "en-ueb-g2.ctb",
+  "braille_cells": 4,
+  "whisper_model": "tiny",
+  "wake_word": "hey netra",
+  "audio_sample_rate": 16000,
+  "record_seconds": 5
+}
