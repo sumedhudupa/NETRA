@@ -1,13 +1,21 @@
 {
-  "ollama_host": "172.18.176.1",
+  "ollama_host": "127.0.0.1",
   "ollama_port": 11434,
-  "ollama_model": "gemma2:2b",
-  "piper_model": "/root/piper-models/en_US-lessac-medium.onnx",
-  "docs_dir": "/media/sdcard/docs",
+  "ollama_model": "qwen2.5-coder:3b",
+  "piper_model": "models/en_US-lessac-medium.onnx",
+  "docs_dir": "docs",
   "braille_table": "en-ueb-g2.ctb",
   "braille_cells": 4,
   "whisper_model": "tiny",
   "wake_word": "hey netra",
   "audio_sample_rate": 16000,
-  "record_seconds": 5
+  "record_seconds": 5,
+  "db_path": "netra_store.db",
+  "enable_wake_word": false,
+  "stt_use_live_mic": true,
+  "stt_allow_typed_fallback": false,
+  "conversational_mode": true,
+  "log_level": "INFO",
+  "logs_dir": "logs",
+  "braille_output_file": "logs/last_output.brl"
 }

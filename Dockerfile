@@ -27,6 +27,7 @@ RUN pip install --break-system-packages \
     # OCR
     pytesseract==0.3.13 \
     pillow==12.1.1 \
+    opencv-python-headless==4.12.0.88 \
     # Braille (pip stub not needed — python3-louis installed via apt above)
     # TTS
     piper-tts==1.4.1 \
@@ -35,7 +36,7 @@ RUN pip install --break-system-packages \
     openai-whisper==20250625 \
     # Audio / math
     soundfile==0.13.1 \
-    numpy==2.4.3 \
+    numpy==2.2.6 \
     # Summarization
     sumy==0.12.0 \
     # Networking (for Ollama API calls)
