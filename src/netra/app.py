@@ -57,31 +57,40 @@ def run() -> None:
 
     parser = IntentParser(ollama)
 
+    logger.info("NETRA services initialized")
     tts.speak("NETRA is ready. You can speak naturally at any time.", hardware)
 
     if documents:
-        first = ", ".join(doc.name for doc in documents[:5])
-        tts.speak(f"I found {len(documents)} documents. First files are {first}", hardware)
+        first = ", ".join(Path(doc.name).stem.replace("_", " ") for doc in documents[:5])
+        tts.speak(f"I found {len(documents)} documents. The first items are {first}", hardware)
         logger.info("Discovered %d documents", len(documents))
     else:
-        tts.speak("No documents found in configured docs directory.", hardware)
+        tts.speak("I could not find any documents in your folder.", hardware)
         logger.warning("No documents found in %s", config.docs_dir)
 
-    while state.running:
-        documents = docs.scan_documents()
-        agent.documents = documents
+    tts.speak("What would you like me to do?", hardware)
 
-        if config.enable_wake_word:
-            stt.wait_for_wake(hardware, 3)
+    try:
+        while state.running:
+            documents = docs.scan_documents()
+            agent.documents = documents
 
-        command = stt.listen_for_command(hardware, config.record_seconds)
-        if not command.strip():
-            tts.speak("I did not catch that. Please repeat.", hardware)
-            continue
-        logger.info("User command text: %s", command)
-        intent = parser.parse(command, [doc.name for doc in documents])
-        logger.info("Resolved intent: %s value=%s", intent.action, intent.value)
-        agent.handle_intent(intent)
+            if config.enable_wake_word:
+                stt.wait_for_wake(hardware, 3)
+
+            command = stt.listen_for_command(hardware, config.record_seconds)
+            if not command.strip():
+                tts.speak("I did not catch that. Please say it again.", hardware)
+                continue
+            
+            logger.info("User command text: %s", command)
+            intent = parser.parse(command, [doc.name for doc in documents])
+            logger.info("Resolved intent: %s value=%s", intent.action, intent.value)
+            agent.handle_intent(intent)
+    except Exception as exc:
+        logger.critical("Fatal error in main loop: %s", exc)
+        tts.speak("I have encountered a critical system error and need to restart. I am sorry for the interruption.", hardware)
+        raise
 
 
 if __name__ == "__main__":

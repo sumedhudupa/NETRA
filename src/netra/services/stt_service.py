@@ -1,6 +1,7 @@
 from pathlib import Path
 import logging
 import numpy as np
+import time
 
 import soundfile as sf
 import whisper
@@ -12,6 +13,8 @@ try:
 except Exception:  # pragma: no cover
     sd = None
 
+
+import threading
 
 class STTService:
     def __init__(
@@ -50,15 +53,17 @@ class STTService:
             self.logger.warning("sounddevice is unavailable; cannot record from live microphone")
             return None
         try:
-            self.logger.info("Recording microphone for %s second(s)", record_seconds)
+            self.logger.info("Recording microphone for %s second(s) on Bluetooth device 3", record_seconds)
             recording = sd.rec(
                 int(record_seconds * self.sample_rate),
                 samplerate=self.sample_rate,
                 channels=1,
                 dtype="float32",
+                device=3  # Explicitly use Rockerz 255 Pro+
             )
             sd.wait()
-            return recording.flatten()
+            # Software gain: multiply signal
+            return recording.flatten() * 5.0
         except Exception as exc:
             self.logger.warning("Microphone recording failed: %s", exc)
             return None

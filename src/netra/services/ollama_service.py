@@ -13,9 +13,11 @@ class OllamaService:
 
     def is_available(self) -> bool:
         try:
-            response = requests.get(self.tags_url, timeout=5)
-            response.raise_for_status()
-            return True
+            # Check if the process is even listening on the port first
+            response = requests.get(self.tags_url, timeout=2)
+            return response.status_code == 200
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
+            return False
         except Exception:
             return False
 

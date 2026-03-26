@@ -82,52 +82,40 @@ class IntentParser:
 
         docs_text = ", ".join(doc_names[:30]) if doc_names else "none"
         prompt = (
-            "You are an intent parser for a blind-assistant voice app. "
-            "Choose the best action and optional value from this set only: "
-            "open_by_name,open_by_index,read_current,camera_ocr,summarize,explain,quiz,define,translate,"
-            "take_note,save_note,read_last_note,delete_note,bookmark,go_bookmark,close_document,repeat,"
-            "start_over,time,battery,list_docs,general_query,unknown. "
-            "Return strict JSON exactly like {\"action\":\"...\",\"value\":\"...\"}. "
-            "Use open_by_name when user asks for a file by title, open_by_index when by number. "
-            "For normal conversation requests map to general_query. "
-            f"Available documents: {docs_text}. "
-            f"User text: {command}"
+            "You are NETRA, an intelligent voice assistant for the blind. "
+            "Your goal is to map user natural language to specific system actions. "
+            "Actions: open_by_name, read_current, camera_ocr, summarize, explain, quiz, translate, list_docs, general_query. "
+            "\n"
+            "Rules:\n"
+            "1. If user mentions 'braille', 'convert', 'translate', map to translate action.\n"
+            "2. If user mentions 'read', 'listen', 'hear', map to read_current action for open doc.\n"
+            "3. If user says 'tell me about' or 'what is in', map to summarize if doc is open, camera_ocr if not.\n"
+            "4. If doc is already open, assume actions like 'braille' or 'read' refer to that doc.\n"
+            "5. Social cues map to general_query.\n"
+            "\n"
+            "Return ONLY strict JSON: {\"action\":\"...\",\"value\":\"...\"}\n"
+            f"Available documents: {docs_text}\n"
+            f"User says: \"{command}\""
         )
         try:
             raw = self.ollama.generate(prompt, timeout=30).strip()
-            raw = raw.replace("```json", "").replace("```", "").strip()
+            # Clean possible markdown
+            if "{" in raw:
+                raw = raw[raw.find("{"):raw.rfind("}")+1]
             data = json.loads(raw)
             action = str(data.get("action", "unknown")).strip().lower()
             value = data.get("value")
+            
             allowed = {
-                "open_by_name",
-                "open_by_index",
-                "camera_ocr",
-                "read_current",
-                "summarize",
-                "explain",
-                "quiz",
-                "define",
-                "translate",
-                "take_note",
-                "save_note",
-                "read_last_note",
-                "delete_note",
-                "bookmark",
-                "go_bookmark",
-                "close_document",
-                "repeat",
-                "start_over",
-                "time",
-                "battery",
-                "list_docs",
-                "general_query",
-                "unknown",
+                "open_by_name", "open_by_index", "camera_ocr", "read_current",
+                "summarize", "explain", "quiz", "define", "translate",
+                "take_note", "save_note", "read_last_note", "delete_note",
+                "bookmark", "go_bookmark", "close_document", "repeat",
+                "start_over", "time", "battery", "list_docs", "general_query", "unknown"
             }
+            
             if action in allowed:
-                if value is None:
-                    return CommandIntent(action)
-                return CommandIntent(action, str(value))
+                return CommandIntent(action, str(value) if value is not None else None)
             return CommandIntent("unknown")
         except Exception:
             return CommandIntent("unknown")

@@ -136,24 +136,32 @@ class ConversationAgent:
             if not self.pending_note and self.state.current_doc_text:
                 self.pending_note = self.state.current_doc_text[:500]
             if not self.pending_note:
-                self._say("No note content available.")
+                self._say("There is no content to save. Please capture an image or dictate a note first.")
                 return
-            name = f"note_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            self.store.save_note(name, self.pending_note)
-            self.pending_note = ""
-            self._say("Note saved.")
+            try:
+                name = f"note_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                self.store.save_note(name, self.pending_note)
+                self.pending_note = ""
+                self._say(f"Note saved successfully as {name.replace('_', ' ')}.")
+            except Exception as exc:
+                self.logger.error("Failed to save note: %s", exc)
+                self._say("I encountered a technical error while saving your note.")
             return
 
         if action == "delete_note":
             note_name = (intent.value or "").strip()
             if not note_name:
-                self._say("Please provide the note name to delete.")
+                self._say("Please tell me the name of the note you want to delete.")
                 return
-            ok = self.store.delete_note(note_name)
-            if not ok:
-                self._say("Note not found.")
-                return
-            self._say("Note deleted.")
+            try:
+                ok = self.store.delete_note(note_name)
+                if not ok:
+                    self._say(f"I could not find a note named {note_name}.")
+                    return
+                self._say(f"Note {note_name} has been deleted.")
+            except Exception as exc:
+                self.logger.error("Failed to delete note: %s", exc)
+                self._say("I was unable to delete the note due to a system error.")
             return
 
         if action == "read_last_note":
@@ -260,56 +268,65 @@ class ConversationAgent:
         self._say(f"Loaded {Path(doc.name).stem}. Say read this or summarize.")
 
     def _camera_capture_flow(self) -> None:
-        self._say("Camera mode. Capture image now.")
-        image_path = self.hardware.capture_image_path()
-        if not image_path or not Path(image_path).exists():
-            self._say("Image path invalid.")
-            return
+        self._say("Camera mode active. Please align the document and I will capture the image now.")
+        try:
+            image_path = self.hardware.capture_image_path()
+            if not image_path or not Path(image_path).exists():
+                self._say("I could not access the camera. Please check the hardware connection.")
+                return
 
-        text = self.document_service.extract_ocr_from_camera_image(image_path)
-        if not text:
-            self.logger.warning("OCR confidence too low for image %s", image_path)
-            self._say("Low confidence OCR. Please recapture with better alignment.")
-            return
+            self._say("Image captured. Analyzing text, please wait.")
+            text = self.document_service.extract_ocr_from_camera_image(image_path)
+            if not text:
+                self.logger.warning("OCR confidence too low for image %s", image_path)
+                self._say("The image was too blurry or poorly lit. Please try capturing again with better alignment and light.")
+                return
 
-        self.state.current_doc_text = text
-        self.state.current_doc_name = "camera_capture"
-        self.store.save_note(f"ocr_{datetime.now().strftime('%Y%m%d_%H%M%S')}", text)
-        self._say("OCR complete.")
-        self._render_text(text)
+            self.state.current_doc_text = text
+            self.state.current_doc_name = "camera_capture"
+            note_name = f"ocr_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            self.store.save_note(note_name, text)
+            self._say("Text extraction complete. I have saved it to your notes. Reading now.")
+            self._render_text(text)
+        except Exception as exc:
+            self.logger.error("Camera capture flow failed: %s", exc)
+            self._say("Something went wrong during the camera capture process.")
 
     def _llm_task(self, instruction: str, source_text: str) -> None:
         if not source_text:
-            self._say("No active text. Open a document or capture image first.")
+            self._say("There is no active document to process. Please open a file or capture an image first.")
             return
         if not self.ollama.is_available():
-            self._say("Ollama is not reachable right now.")
+            self._say("The local intelligence service is currently unavailable. I cannot perform summaries or explanations right now.")
             return
 
+        self._say("Processing your request, this may take a few seconds.")
         prompt = f"{instruction}. Keep response concise and voice-friendly.\\n\\nText:\\n{source_text[:8000]}"
         try:
             result = self.ollama.generate(prompt, timeout=90)
-        except Exception:
-            self._say("LLM request failed.")
+        except Exception as exc:
+            self.logger.error("LLM task failed: %s", exc)
+            self._say("I encountered an error while trying to process the text.")
             return
         self._render_text(result)
 
     def _llm_general(self, query: str) -> None:
         if not self.ollama.is_available():
-            self._say("I cannot reach the local language model right now.")
+            self._say("I am sorry, my conversational engine is offline. I can still perform basic tasks though.")
             return
 
-        prompt = (
-            "You are NETRA, a concise voice assistant for blind users. "
-            "Answer clearly and briefly in spoken style. "
-            f"User query: {query}"
+        self._say("Let me think.")
+        system_prompt = (
+            "You are NETRA, a helpful, warm, and extremely concise assistant for blind users. "
+            "Your responses must be very brief (1-2 sentences) and optimized for text-to-speech. "
+            "If the user says thank you, respond warmly and briefly."
         )
         try:
-            result = self.ollama.generate(prompt, timeout=60)
-        except Exception:
-            self._say("I could not process that request.")
-            return
-        self._render_text(result)
+            result = self.ollama.generate(query, system=system_prompt, timeout=60)
+            self._say(result)
+        except Exception as exc:
+            self.logger.error("General LLM query failed: %s", exc)
+            self._say("I was unable to process your request.")
 
     def _render_text(self, text: str) -> None:
         if not text.strip():

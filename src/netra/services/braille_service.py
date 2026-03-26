@@ -15,42 +15,21 @@ class BrailleService:
         self.logger = logging.getLogger(__name__)
 
     def text_to_patterns(self, text: str) -> Tuple[str, List[int]]:
+        # Normalize: basic cleanup for fallback or liblouis
+        text = text.replace("\n", " ").replace("\r", " ")
+        
         if louis is None:
             contracted = text.lower()
             basic_map = {
-                "a": 0b000001,
-                "b": 0b000011,
-                "c": 0b001001,
-                "d": 0b011001,
-                "e": 0b010001,
-                "f": 0b001011,
-                "g": 0b011011,
-                "h": 0b010011,
-                "i": 0b001010,
-                "j": 0b011010,
-                "k": 0b000101,
-                "l": 0b000111,
-                "m": 0b001101,
-                "n": 0b011101,
-                "o": 0b010101,
-                "p": 0b001111,
-                "q": 0b011111,
-                "r": 0b010111,
-                "s": 0b001110,
-                "t": 0b011110,
-                "u": 0b100101,
-                "v": 0b100111,
-                "w": 0b111010,
-                "x": 0b101101,
-                "y": 0b111101,
-                "z": 0b110101,
-                " ": 0b000000,
-                ",": 0b000010,
-                ".": 0b010110,
-                "?": 0b010010,
-                "!": 0b010111,
-                "-": 0b100100,
-                "'": 0b000100,
+                "a": 0b000001, "b": 0b000011, "c": 0b001001, "d": 0b011001, "e": 0b010001,
+                "f": 0b001011, "g": 0b011011, "h": 0b010011, "i": 0b001010, "j": 0b011010,
+                "k": 0b000101, "l": 0b000111, "m": 0b001101, "n": 0b011101, "o": 0b010101,
+                "p": 0b001111, "q": 0b011111, "r": 0b010111, "s": 0b001110, "t": 0b011110,
+                "u": 0b100101, "v": 0b100111, "w": 0b111010, "x": 0b101101, "y": 0b111101,
+                "z": 0b110101, " ": 0b000000, ",": 0b000010, ".": 0b010110, "?": 0b010010,
+                "!": 0b010111, "-": 0b100100, "'": 0b000100, "1": 0b000001, "2": 0b000011,
+                "3": 0b001001, "4": 0b011001, "5": 0b010001, "6": 0b001011, "7": 0b011011,
+                "8": 0b010011, "9": 0b001010, "0": 0b011010
             }
             patterns = [basic_map.get(ch, 0b000000) for ch in contracted]
             self.logger.warning("liblouis unavailable; using basic fallback braille mapping")
