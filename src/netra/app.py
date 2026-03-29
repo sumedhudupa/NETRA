@@ -33,8 +33,12 @@ def run() -> None:
     tts = TTSService(config.piper_model)
     stt = STTService(
         config.whisper_model,
+        config.vosk_model,
         config.audio_sample_rate,
         config.wake_word,
+        stt_engine=config.stt_engine,
+        stt_engine_wake_word=config.stt_engine_wake_word,
+        stt_engine_command=config.stt_engine_command,
         use_live_mic=config.stt_use_live_mic,
         allow_typed_fallback=config.stt_allow_typed_fallback,
     )

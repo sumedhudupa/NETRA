@@ -13,6 +13,10 @@ class NetraConfig:
     braille_table: str = "en-ueb-g2.ctb"
     braille_cells: int = 4
     whisper_model: str = "tiny"
+    vosk_model: str = "models/vosk-model-small-en-us-0.15"
+    stt_engine: str = "vosk"
+    stt_engine_wake_word: str = "vosk"
+    stt_engine_command: str = "whisper"
     wake_word: str = "hey netra"
     audio_sample_rate: int = 16000
     record_seconds: int = 5

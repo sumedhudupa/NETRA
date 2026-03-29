@@ -9,3 +9,5 @@ netra_store.db
 plan.md
 venv/
 docs/
+output/
+models/

@@ -13,7 +13,7 @@ NETRA is a low-cost, fully standalone refreshable braille reading assistant for 
 - **Braille output** — UEB Grade 2 translation via liblouis, displayed as 4-cell dot patterns
 - **TTS output** — simultaneous audio output via Piper TTS (`en_US-lessac-medium`)
 - **LLM integration** — Ollama + qwen2.5-coder:3b for document summarization and file navigation by name/index
-- **STT** — Whisper tiny for voice commands and wake word detection ("hey netra")
+- **Dual STT engines** — Vosk (fast, for wake word detection) + Whisper (accurate, for command recognition), fully configurable
 - **4-cell scroll** — braille text displayed in chunks of 4 cells, advanced by button press
 
 ---
@@ -45,7 +45,8 @@ Output Layer
 | OCR                 | Tesseract + pytesseract     | 5.x / 0.3.13 |
 | Braille translation | liblouis + python3-louis    | 3.29.0       |
 | TTS                 | piper-tts (`lessac-medium`) | 1.4.1        |
-| STT / wake word     | openai-whisper (tiny)       | 20250625     |
+| STT (accuracy)      | openai-whisper (tiny/base)  | 20250625     |
+| STT (speed)         | Vosk                        | 0.3.45       |
 | LLM                 | Ollama + qwen2.5-coder:3b   | —            |
 | Runtime             | Python 3.12                 | —            |
 | Target hardware     | Raspberry Pi 4 (4GB)        | —            |
@@ -173,6 +174,10 @@ curl http://<IP>:11434/api/tags
   "braille_table": "en-ueb-g2.ctb",
   "braille_cells": 4,
   "whisper_model": "tiny",
+  "vosk_model": "models/vosk-model-small-en-us-0.15",
+  "stt_engine": "vosk",
+  "stt_engine_wake_word": "vosk",
+  "stt_engine_command": "whisper",
   "wake_word": "hey netra",
   "audio_sample_rate": 16000,
   "record_seconds": 5
@@ -180,6 +185,7 @@ curl http://<IP>:11434/api/tags
 ```
 
 > On real RPi 4, set `ollama_host` to `127.0.0.1`.
+> **STT Configuration**: Use Vosk for fast wake word detection and Whisper for accurate command recognition. See [docs/STT_CONFIGURATION.md](docs/STT_CONFIGURATION.md) for detailed configuration guide.
 
 ### Step 7 — Add test documents
 
@@ -282,18 +288,22 @@ All hardware stubs are in the `HARDWARE ABSTRACTION LAYER` section of `netra.py`
 
 ## Config Reference
 
-| Key              | Default                  | Description                                                           |
-| ---------------- | ------------------------ | --------------------------------------------------------------------- |
-| `ollama_host`    | `127.0.0.1`              | Ollama server IP. Use `127.0.0.1` on RPi, Docker gateway IP on laptop |
-| `ollama_port`    | `11434`                  | Ollama server port                                                    |
-| `ollama_model`   | `qwen2.5-coder:3b`       | LLM model name (must be pulled in Ollama)                             |
-| `piper_model`    | `/root/piper-models/...` | Path to Piper `.onnx` model file                                      |
-| `docs_dir`       | `/media/sdcard/docs`     | Directory scanned for PDF and image files                             |
-| `braille_table`  | `en-ueb-g2.ctb`          | liblouis translation table. Use `en-ueb-g1.ctb` for Grade 1           |
-| `braille_cells`  | `4`                      | Number of physical braille cells on the display                       |
-| `whisper_model`  | `tiny`                   | Whisper model size (`tiny`, `base`, `small`)                          |
-| `wake_word`      | `hey netra`              | Wake word phrase (lowercase)                                          |
-| `record_seconds` | `5`                      | Duration to record after wake word                                    |
+| Key                    | Default                  | Description                                                           |
+| ---------------------- | ------------------------ | --------------------------------------------------------------------- |
+| `ollama_host`          | `127.0.0.1`              | Ollama server IP. Use `127.0.0.1` on RPi, Docker gateway IP on laptop |
+| `ollama_port`          | `11434`                  | Ollama server port                                                    |
+| `ollama_model`         | `qwen2.5-coder:3b`       | LLM model name (must be pulled in Ollama)                             |
+| `piper_model`          | `/root/piper-models/...` | Path to Piper `.onnx` model file                                      |
+| `docs_dir`             | `/media/sdcard/docs`     | Directory scanned for PDF and image files                             |
+| `braille_table`        | `en-ueb-g2.ctb`          | liblouis translation table. Use `en-ueb-g1.ctb` for Grade 1           |
+| `braille_cells`        | `4`                      | Number of physical braille cells on the display                       |
+| `whisper_model`        | `tiny`                   | Whisper model size (`tiny`, `base`, `small`)                          |
+| `vosk_model`           | `models/vosk-model-...`  | Path to Vosk model directory                                          |
+| `stt_engine`           | `vosk`                   | Default STT engine (`vosk` or `whisper`)                              |
+| `stt_engine_wake_word` | `vosk`                   | Engine for wake word detection (Vosk recommended for speed)           |
+| `stt_engine_command`   | `whisper`                | Engine for command recognition (Whisper recommended for accuracy)     |
+| `wake_word`            | `hey netra`              | Wake word phrase (lowercase)                                          |
+| `record_seconds`       | `5`                      | Duration to record after wake word                                    |
 
 ---
 
