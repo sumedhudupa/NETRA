@@ -1,7 +1,7 @@
 {
   "ollama_host": "127.0.0.1",
   "ollama_port": 11434,
-  "ollama_model": "qwen2.5-coder:3b",
+  "ollama_model": "gemma2:2b",
   "piper_model": "models/en_US-lessac-medium.onnx",
   "docs_dir": "docs",
   "braille_table": "en-ueb-g2.ctb",

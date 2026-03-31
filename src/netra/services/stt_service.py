@@ -4,7 +4,10 @@ import numpy as np
 import time
 
 import soundfile as sf
-import whisper
+try:
+    import whisper
+except Exception:  # pragma: no cover
+    whisper = None
 
 from netra.hardware.interfaces import HardwareAdapter
 
@@ -48,11 +51,20 @@ class STTService:
         
         # Whisper model
         self.whisper_model = None
-        try:
-            self.whisper_model = whisper.load_model(whisper_model_name)
-            self.logger.info("Whisper model loaded: %s", whisper_model_name)
-        except Exception as exc:
-            self.logger.warning("Whisper model unavailable (%s): %s", whisper_model_name, exc)
+        if whisper is not None:
+            needs_whisper = (
+                self.stt_engine == "whisper"
+                or self.stt_engine_wake_word == "whisper"
+                or self.stt_engine_command == "whisper"
+            )
+            if needs_whisper:
+                try:
+                    self.whisper_model = whisper.load_model(whisper_model_name)
+                    self.logger.info("Whisper model loaded: %s", whisper_model_name)
+                except Exception as exc:
+                    self.logger.warning("Whisper model unavailable (%s): %s", whisper_model_name, exc)
+        else:
+            self.logger.info("Whisper library not installed; Whisper STT disabled")
         
         # Vosk model
         self.vosk_model = None
