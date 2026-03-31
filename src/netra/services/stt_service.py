@@ -126,7 +126,7 @@ class STTService:
                 samplerate=self.sample_rate,
                 channels=1,
                 dtype="float32",
-                device=3  # Explicitly use Rockerz 255 Pro+
+                device=None  # Use system default microphone (change if needed)
             )
             sd.wait()
             # Software gain: multiply signal

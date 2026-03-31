@@ -5,9 +5,10 @@ from pathlib import Path
 
 @dataclass
 class NetraConfig:
-    ollama_host: str = "127.0.0.1"
-    ollama_port: int = 11434
-    ollama_model: str = "qwen2.5-coder:3b"
+    llama_model_path: str = "models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    llama_threads: int = 4
+    llama_context_size: int = 2048
+    llama_temperature: float = 0.7
     piper_model: str = "models/en_US-lessac-medium.onnx"
     docs_dir: str = "docs"
     braille_table: str = "en-ueb-g2.ctb"

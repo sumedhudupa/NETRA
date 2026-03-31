@@ -9,7 +9,7 @@ from netra.models.types import SessionState
 from netra.services.braille_service import BrailleService
 from netra.services.document_service import DocumentService
 from netra.services.ocr_service import OCRService
-from netra.services.ollama_service import OllamaService
+from netra.services.llama_service import LlamaCppService
 from netra.services.store_service import StoreService
 from netra.services.stt_service import STTService
 from netra.services.tts_service import TTSService
@@ -22,13 +22,18 @@ def run() -> None:
     log_path = configure_logging(root / config.logs_dir, config.log_level)
     logger = logging.getLogger(__name__)
     logger.info("NETRA startup initiated")
-    logger.info("Using config: docs_dir=%s, model=%s", config.docs_dir, config.ollama_model)
+    logger.info("Using config: docs_dir=%s, model=%s", config.docs_dir, config.llama_model_path)
     logger.info("Logs are written to %s", log_path)
 
     hardware = StubHardwareAdapter()
     ocr = OCRService()
     docs = DocumentService(config.docs_dir, ocr)
-    ollama = OllamaService(config.ollama_host, config.ollama_port, config.ollama_model)
+    llama = LlamaCppService(
+        str(root / config.llama_model_path),
+        n_threads=config.llama_threads,
+        n_ctx=config.llama_context_size,
+        temperature=config.llama_temperature
+    )
     braille = BrailleService(config.braille_table, config.braille_cells)
     tts = TTSService(config.piper_model)
     stt = STTService(
@@ -51,7 +56,7 @@ def run() -> None:
         state=state,
         documents=documents,
         document_service=docs,
-        ollama=ollama,
+        llama=llama,
         braille=braille,
         tts=tts,
         store=store,
@@ -59,7 +64,7 @@ def run() -> None:
         braille_output_file=str(root / config.braille_output_file),
     )
 
-    parser = IntentParser(ollama)
+    parser = IntentParser(llama)
 
     logger.info("NETRA services initialized")
     tts.speak("NETRA is ready. You can speak naturally at any time.", hardware)

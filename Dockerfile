@@ -1,5 +1,5 @@
 # NETRA - Refreshable Braille Reading Assistant
-# Base: ARM64 Python 3.12 slim (matches Raspberry Pi 4 target)
+# Base: ARM64 Python 3.12 slim (matches Raspberry Pi 4B target)
 FROM arm64v8/python:3.12-slim
 
 # ── System packages ────────────────────────────────────────────────────────────
@@ -14,6 +14,9 @@ RUN apt-get update && apt-get install -y \
     # Audio (required by whisper + piper)
     ffmpeg \
     libsndfile1 \
+    # Build tools for llama-cpp-python
+    build-essential \
+    cmake \
     # Utilities
     wget \
     curl \
@@ -37,10 +40,8 @@ RUN pip install --break-system-packages \
     # Audio / math
     soundfile==0.13.1 \
     numpy==2.2.6 \
-    # Summarization
-    sumy==0.12.0 \
-    # Networking (for Ollama API calls)
-    requests==2.32.5
+    # LLM (llama.cpp Python bindings with CPU-only support)
+    llama-cpp-python==0.2.90
 
 # ── Piper TTS model (en_US lessac medium — best quality/performance tradeoff) ──
 RUN mkdir -p /root/piper-models && \
@@ -49,8 +50,13 @@ RUN mkdir -p /root/piper-models && \
     wget -q "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json" \
         -O /root/piper-models/en_US-lessac-medium.onnx.json
 
-# ── Whisper model pre-download (tiny — ~150MB, CPU viable on RPi 5) ────────────
+# ── Whisper model pre-download (tiny — ~150MB, CPU viable on RPi 4B) ────────────
 RUN python3 -c "import whisper; whisper.load_model('tiny')"
+
+# ── Download TinyLlama model for llama.cpp ──────────────────────────────────────
+RUN mkdir -p /root/models && \
+    wget -q "https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" \
+        -O /root/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
 
 WORKDIR /root
 

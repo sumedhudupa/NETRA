@@ -6,7 +6,7 @@ import logging
 from netra.models.types import CommandIntent, DocumentRef, SessionState
 from netra.services.braille_service import BrailleService
 from netra.services.document_service import DocumentService
-from netra.services.ollama_service import OllamaService
+from netra.services.llama_service import LlamaCppService
 from netra.services.store_service import StoreService
 from netra.services.tts_service import TTSService
 from netra.hardware.interfaces import HardwareAdapter
@@ -23,7 +23,7 @@ class ConversationAgent:
         state: SessionState,
         documents: List[DocumentRef],
         document_service: DocumentService,
-        ollama: OllamaService,
+        llama: LlamaCppService,
         braille: BrailleService,
         tts: TTSService,
         store: StoreService,
@@ -34,7 +34,7 @@ class ConversationAgent:
         self.state = state
         self.documents = documents
         self.document_service = document_service
-        self.ollama = ollama
+        self.llama = llama
         self.braille = braille
         self.tts = tts
         self.store = store
@@ -296,14 +296,14 @@ class ConversationAgent:
         if not source_text:
             self._say("There is no active document to process. Please open a file or capture an image first.")
             return
-        if not self.ollama.is_available():
+        if not self.llama.is_available():
             self._say("The local intelligence service is currently unavailable. I cannot perform summaries or explanations right now.")
             return
 
         self._say("Processing your request, this may take a few seconds.")
         prompt = f"{instruction}. Keep response concise and voice-friendly.\\n\\nText:\\n{source_text[:8000]}"
         try:
-            result = self.ollama.generate(prompt, timeout=90)
+            result = self.llama.generate(prompt, timeout=90)
         except Exception as exc:
             self.logger.error("LLM task failed: %s", exc)
             self._say("I encountered an error while trying to process the text.")
@@ -311,7 +311,7 @@ class ConversationAgent:
         self._render_text(result)
 
     def _llm_general(self, query: str) -> None:
-        if not self.ollama.is_available():
+        if not self.llama.is_available():
             self._say("I am sorry, my conversational engine is offline. I can still perform basic tasks though.")
             return
 
@@ -322,7 +322,7 @@ class ConversationAgent:
             "If the user says thank you, respond warmly and briefly."
         )
         try:
-            result = self.ollama.generate(query, system=system_prompt, timeout=60)
+            result = self.llama.generate(query, system=system_prompt, timeout=60)
             self._say(result)
         except Exception as exc:
             self.logger.error("General LLM query failed: %s", exc)

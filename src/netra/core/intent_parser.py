@@ -4,12 +4,12 @@ from difflib import get_close_matches
 from typing import List
 
 from netra.models.types import CommandIntent
-from netra.services.ollama_service import OllamaService
+from netra.services.llama_service import LlamaCppService
 
 
 class IntentParser:
-    def __init__(self, ollama: OllamaService) -> None:
-        self.ollama = ollama
+    def __init__(self, llama: LlamaCppService) -> None:
+        self.llama = llama
 
     def parse(self, command: str, doc_names: List[str]) -> CommandIntent:
         text = command.strip().lower()
@@ -77,7 +77,7 @@ class IntentParser:
         return doc_names[index]
 
     def _llm_parse(self, command: str, doc_names: List[str]) -> CommandIntent:
-        if not self.ollama.is_available():
+        if not self.llama.is_available():
             return CommandIntent("unknown")
 
         docs_text = ", ".join(doc_names[:30]) if doc_names else "none"
@@ -98,7 +98,7 @@ class IntentParser:
             f"User says: \"{command}\""
         )
         try:
-            raw = self.ollama.generate(prompt, timeout=30).strip()
+            raw = self.llama.generate(prompt, timeout=30).strip()
             # Clean possible markdown
             if "{" in raw:
                 raw = raw[raw.find("{"):raw.rfind("}")+1]
