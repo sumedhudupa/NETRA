@@ -163,10 +163,13 @@ class STTService:
     def listen_for_command(self, hardware: HardwareAdapter, record_seconds: int) -> str:
         """Listen for command using configured command engine (Whisper by default for accuracy)."""
         engine = self.stt_engine_command
-        source = hardware.read_audio_path_or_text_mode(record_seconds)
-        if source and Path(source).exists():
-            return self.transcribe_wav(source, engine=engine)
+        
+        # Always use hardware recording on RPi
+        audio_path = hardware.record_audio(record_seconds)
+        if audio_path and Path(audio_path).exists():
+            return self.transcribe_wav(audio_path, engine=engine)
 
+        # Fallback to live mic if hardware doesn't support recording
         if self.use_live_mic:
             # Check if the selected engine is available
             if engine == "whisper" and self.whisper_model is None:
@@ -192,15 +195,18 @@ class STTService:
     def wait_for_wake(self, hardware: HardwareAdapter, record_seconds: int) -> None:
         """Wait for wake word using configured wake word engine (Vosk by default for speed)."""
         engine = self.stt_engine_wake_word
-        source = hardware.read_audio_path_or_text_mode(record_seconds)
-        if source and Path(source).exists():
-            transcript = self.transcribe_wav(source, engine=engine)
+        
+        # Always use hardware recording on RPi
+        audio_path = hardware.record_audio(record_seconds)
+        if audio_path and Path(audio_path).exists():
+            transcript = self.transcribe_wav(audio_path, engine=engine)
             if self.wake_word in transcript:
-                self.logger.info("Wake word detected from wav input")
+                self.logger.info("Wake word detected from hardware recording")
                 return
-            self.logger.info("Wake word not detected in wav transcript: %s", transcript)
+            self.logger.info("Wake word not detected in transcript: %s", transcript)
             return
 
+        # Fallback to live mic if hardware doesn't support recording
         if self.use_live_mic:
             # Check if the selected engine is available
             if engine == "whisper" and self.whisper_model is None:

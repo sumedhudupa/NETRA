@@ -349,7 +349,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     def play_wav(self, wav_path: str) -> None:
         """
         Play audio file through speaker.
-        Uses aplay for reliable playback on Raspberry Pi.
+        Uses paplay (PulseAudio) for reliable playback on Raspberry Pi.
         """
         if not Path(wav_path).exists():
             self.logger.error("Audio file not found: %s", wav_path)
@@ -362,25 +362,26 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             GPIO.output(self.PIN_STATUS_LED, GPIO.HIGH)
         
         try:
-            # Use aplay for reliable playback
+            # Use paplay (PulseAudio) for reliable playback through headphone
             result = subprocess.run(
-                ["aplay", "-q", wav_path],
+                ["paplay", wav_path],
                 capture_output=True,
                 text=True,
                 timeout=120  # 2 minute timeout for long audio
             )
             
             if result.returncode != 0:
-                self.logger.warning("aplay failed: %s", result.stderr)
-                # Fallback to mpv
+                self.logger.warning("paplay failed: %s, trying aplay", result.stderr)
+                # Fallback to aplay
                 subprocess.run(
-                    ["mpv", "--no-video", "--really-quiet", wav_path],
+                    ["aplay", "-q", wav_path],
                     capture_output=True,
+                    text=True,
                     timeout=120
                 )
                 
         except FileNotFoundError:
-            self.logger.error("Audio player not found (aplay/mpv)")
+            self.logger.error("Audio player not found (paplay/aplay)")
         except subprocess.TimeoutExpired:
             self.logger.warning("Audio playback timed out")
         except Exception as exc:
@@ -398,15 +399,11 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     
     def record_audio(self, seconds: int) -> str:
         """
-        Record audio from USB microphone.
+        Record audio from headphone/microphone using parecord (PulseAudio).
         Returns path to recorded WAV file.
         
         This is called by STT service for voice input.
         """
-        if not AUDIO_AVAILABLE:
-            self.logger.error("Audio libraries not available (sounddevice/soundfile)")
-            return ""
-        
         output_dir = Path("/tmp/netra_audio")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = int(time.time() * 1000)
@@ -417,28 +414,43 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             GPIO.output(self.PIN_STATUS_LED, GPIO.HIGH)
         
         try:
-            self.logger.info("Recording %d seconds from microphone (device=%s)", 
+            self.logger.info("Recording %d seconds from device %s using parecord", 
                            seconds, self.audio_device)
             
-            # Record audio
-            recording = sd.rec(
-                int(seconds * self.AUDIO_SAMPLE_RATE),
-                samplerate=self.AUDIO_SAMPLE_RATE,
-                channels=self.AUDIO_CHANNELS,
-                dtype='float32',
-                device=self.audio_device
-            )
-            sd.wait()
+            # Build parecord command
+            cmd = [
+                "parecord",
+                f"--channels={self.AUDIO_CHANNELS}",
+                f"--rate={self.AUDIO_SAMPLE_RATE}",
+                f"--format=s16le",
+                output_path
+            ]
             
-            # Apply gain to boost quiet recordings
-            recording = recording * 3.0
+            # Add device parameter if specified
+            if self.audio_device is not None:
+                cmd.insert(1, f"--device={self.audio_device}")
             
-            # Save to WAV file
-            sf.write(output_path, recording, self.AUDIO_SAMPLE_RATE)
+            # Start recording process
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             
-            self.logger.info("Audio recorded successfully: %s", output_path)
-            return output_path
+            # Wait for specified duration
+            time.sleep(seconds)
             
+            # Stop recording
+            proc.terminate()
+            proc.wait(timeout=2)
+            
+            if Path(output_path).exists():
+                self.logger.info("Audio recorded successfully: %s", output_path)
+                return output_path
+            else:
+                self.logger.error("Recording file was not created")
+                return ""
+            
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            self.logger.error("Recording process killed (timeout)")
+            return ""
         except Exception as exc:
             self.logger.error("Audio recording failed: %s", exc)
             return ""
