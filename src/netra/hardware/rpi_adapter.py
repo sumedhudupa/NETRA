@@ -32,17 +32,6 @@ except ImportError:
     Picamera2 = None
     PICAMERA_AVAILABLE = False
 
-try:
-    import sounddevice as sd
-    import numpy as np
-    import soundfile as sf
-    AUDIO_AVAILABLE = True
-except ImportError:
-    sd = None
-    np = None
-    sf = None
-    AUDIO_AVAILABLE = False
-
 
 class RaspberryPiHardwareAdapter(HardwareAdapter):
     """
