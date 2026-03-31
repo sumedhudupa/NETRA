@@ -120,17 +120,17 @@ class STTService:
             self.logger.warning("sounddevice is unavailable; cannot record from live microphone")
             return None
         try:
-            self.logger.info("Recording microphone for %s second(s) on Bluetooth device 3", record_seconds)
+            self.logger.info("Recording microphone for %s second(s)", record_seconds)
             recording = sd.rec(
                 int(record_seconds * self.sample_rate),
                 samplerate=self.sample_rate,
                 channels=1,
                 dtype="float32",
-                device=None  # Use system default microphone (change if needed)
+                device=None  # Use system default microphone
             )
             sd.wait()
-            # Software gain: multiply signal
-            return recording.flatten() * 5.0
+            # Software gain: boost quiet microphones
+            return recording.flatten() * 3.0
         except Exception as exc:
             self.logger.warning("Microphone recording failed: %s", exc)
             return None

@@ -1,10 +1,10 @@
 from pathlib import Path
 import logging
+import platform
 
 from netra.config import load_config
 from netra.core.conversation_agent import ConversationAgent
 from netra.core.intent_parser import IntentParser
-from netra.hardware.stub_adapter import StubHardwareAdapter
 from netra.models.types import SessionState
 from netra.services.braille_service import BrailleService
 from netra.services.document_service import DocumentService
@@ -16,6 +16,47 @@ from netra.services.tts_service import TTSService
 from netra.utils.logging_utils import configure_logging
 
 
+def _create_hardware_adapter(config):
+    """
+    Create appropriate hardware adapter based on config and platform.
+    
+    Modes:
+    - "auto": Detect platform automatically (RPi on ARM Linux, Stub otherwise)
+    - "rpi": Force Raspberry Pi adapter
+    - "stub": Force stub adapter (for development/testing)
+    """
+    logger = logging.getLogger(__name__)
+    mode = config.hardware_mode.lower()
+    
+    # Auto-detect: Check if running on Raspberry Pi
+    is_raspberry_pi = False
+    if mode == "auto":
+        try:
+            # Check for Raspberry Pi by looking at /proc/cpuinfo or platform
+            if platform.machine().startswith('aarch64') or platform.machine().startswith('arm'):
+                # Additional check for Pi-specific files
+                if Path("/proc/device-tree/model").exists():
+                    model = Path("/proc/device-tree/model").read_text()
+                    is_raspberry_pi = "Raspberry Pi" in model
+                    logger.info("Detected hardware: %s", model.strip())
+        except Exception:
+            pass
+    
+    # Use RPi adapter if forced or auto-detected
+    if mode == "rpi" or (mode == "auto" and is_raspberry_pi):
+        try:
+            from netra.hardware.rpi_adapter import RaspberryPiHardwareAdapter
+            logger.info("Using Raspberry Pi hardware adapter")
+            return RaspberryPiHardwareAdapter(audio_device=config.rpi_audio_device)
+        except ImportError as exc:
+            logger.warning("RPi adapter import failed: %s, falling back to stub", exc)
+    
+    # Fallback to stub adapter
+    from netra.hardware.stub_adapter import StubHardwareAdapter
+    logger.info("Using stub hardware adapter")
+    return StubHardwareAdapter()
+
+
 def run() -> None:
     root = Path(__file__).resolve().parents[2]
     config = load_config(root / "config.json")
@@ -25,7 +66,9 @@ def run() -> None:
     logger.info("Using config: docs_dir=%s, model=%s", config.docs_dir, config.llama_model_path)
     logger.info("Logs are written to %s", log_path)
 
-    hardware = StubHardwareAdapter()
+    # Create hardware adapter (auto-detect RPi or use stub)
+    hardware = _create_hardware_adapter(config)
+    
     ocr = OCRService()
     docs = DocumentService(config.docs_dir, ocr)
     llama = LlamaCppService(
@@ -96,10 +139,18 @@ def run() -> None:
             intent = parser.parse(command, [doc.name for doc in documents])
             logger.info("Resolved intent: %s value=%s", intent.action, intent.value)
             agent.handle_intent(intent)
+            
+    except KeyboardInterrupt:
+        logger.info("Shutdown requested by user")
+        tts.speak("Goodbye.", hardware)
     except Exception as exc:
         logger.critical("Fatal error in main loop: %s", exc)
         tts.speak("I have encountered a critical system error and need to restart. I am sorry for the interruption.", hardware)
         raise
+    finally:
+        # Cleanup hardware resources
+        if hasattr(hardware, 'cleanup'):
+            hardware.cleanup()
 
 
 if __name__ == "__main__":

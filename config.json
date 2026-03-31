@@ -22,5 +22,10 @@
   "conversational_mode": true,
   "log_level": "INFO",
   "logs_dir": "logs",
-  "braille_output_file": "logs/last_output.brl"
+  "braille_output_file": "logs/last_output.brl",
+  "hardware_mode": "auto",
+  "rpi_audio_device": null,
+  "rpi_gpio_scroll_button": 17,
+  "rpi_gpio_status_led": 18,
+  "rpi_gpio_servo_pins": "12,13,19,26"
 }

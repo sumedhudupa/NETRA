@@ -17,7 +17,7 @@ class NetraConfig:
     vosk_model: str = "models/vosk-model-small-en-us-0.15"
     stt_engine: str = "vosk"
     stt_engine_wake_word: str = "vosk"
-    stt_engine_command: str = "whisper"
+    stt_engine_command: str = "vosk"
     wake_word: str = "hey netra"
     audio_sample_rate: int = 16000
     record_seconds: int = 5
@@ -29,6 +29,12 @@ class NetraConfig:
     log_level: str = "INFO"
     logs_dir: str = "logs"
     braille_output_file: str = "logs/last_output.brl"
+    # Raspberry Pi Hardware Settings
+    hardware_mode: str = "auto"  # "auto", "rpi", or "stub"
+    rpi_audio_device: int = None  # None = default, or ALSA card number
+    rpi_gpio_scroll_button: int = 17
+    rpi_gpio_status_led: int = 18
+    rpi_gpio_servo_pins: str = "12,13,19,26"  # Comma-separated GPIO pins for 4 servos
 
 
 DEFAULT_CONFIG = NetraConfig()
