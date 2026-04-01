@@ -32,7 +32,7 @@ class ConversationAgent:
         braille_output_file: str,
         ocr_lines_per_chunk: int = 2,
         pdf_pages_per_chunk: int = 1,
-        braille_display_delay: float = 0.5,
+        braille_display_delay: float = 3.0,
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self.state = state
@@ -343,15 +343,7 @@ class ConversationAgent:
         for chunk_index, chunk in enumerate(cleaned_chunks, start=1):
             self.logger.info("Streaming chunk %d/%d", chunk_index, len(cleaned_chunks))
             self.tts.speak(chunk, self.hardware)
-            
-            # Render braille with delay between display steps
-            _, patterns = self.braille.text_to_patterns(chunk)
-            braille_chunks = self.braille.chunk_patterns(patterns)
-            
-            for display_index, display_chunk in enumerate(braille_chunks, start=1):
-                self.hardware.display_braille_cells(display_chunk)
-                if display_index < len(braille_chunks):
-                    time.sleep(self.braille_display_delay)
+            self._render_braille_text(chunk)
 
     def _llm_task(self, instruction: str, source_text: str) -> None:
         if not source_text:
@@ -429,7 +421,7 @@ class ConversationAgent:
         for idx, chunk in enumerate(chunks, start=1):
             self.hardware.display_braille_cells(chunk)
             if idx < total:
-                self.hardware.wait_for_scroll()
+                time.sleep(self.braille_display_delay)
 
     def _say(self, text: str) -> None:
         self.state.last_output = text

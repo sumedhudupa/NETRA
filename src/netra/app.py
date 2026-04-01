@@ -47,7 +47,13 @@ def _create_hardware_adapter(config):
         try:
             from netra.hardware.rpi_adapter import RaspberryPiHardwareAdapter
             logger.info("Using Raspberry Pi hardware adapter")
-            return RaspberryPiHardwareAdapter(audio_device=config.rpi_audio_device)
+            servo_pins = [int(pin.strip()) for pin in config.rpi_gpio_servo_pins.split(",") if pin.strip()]
+            return RaspberryPiHardwareAdapter(
+                audio_device=config.rpi_audio_device,
+                scroll_button_pin=config.rpi_gpio_scroll_button,
+                status_led_pin=config.rpi_gpio_status_led,
+                servo_pins=servo_pins,
+            )
         except ImportError as exc:
             logger.warning("RPi adapter import failed: %s, falling back to stub", exc)
     

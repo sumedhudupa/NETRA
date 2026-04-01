@@ -27,8 +27,8 @@
   "rpi_audio_device": 3,
   "rpi_gpio_scroll_button": 17,
   "rpi_gpio_status_led": 18,
-  "rpi_gpio_servo_pins": "12,13,19,26",
+  "rpi_gpio_servo_pins": "12,13,19,26,16,20,21,6",
   "ocr_lines_per_chunk": 2,
   "pdf_pages_per_chunk": 1,
-  "braille_display_delay": 0.5
+  "braille_display_delay": 3.0
 }

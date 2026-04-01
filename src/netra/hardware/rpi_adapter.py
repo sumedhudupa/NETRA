@@ -11,7 +11,6 @@ Complete implementation for:
 from typing import List
 import logging
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 
@@ -40,7 +39,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     Hardware Configuration:
     - GPIO 17: Scroll button (INPUT, PULL_UP)
     - GPIO 18: Status LED (OUTPUT)
-    - GPIO 12, 13, 19, 26: Servo motors for 4 braille cells (PWM)
+    - 8 GPIO pins: Servo motors for 4 braille cells (2 per cell, left/right columns)
     - USB microphone: For voice input
     - 3.5mm audio jack: For speaker output
     - Pi Camera / USB webcam: For document capture
@@ -50,13 +49,10 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     Using cam-barrel mechanism with servo rotation.
     """
     
-    # GPIO Pin Configuration
-    PIN_SCROLL_BUTTON = 17      # Scroll/Next button (pull-up, active low)
-    PIN_STATUS_LED = 18         # Status indicator LED
-    PIN_SERVO_CELL1 = 12        # Servo for braille cell 1
-    PIN_SERVO_CELL2 = 13        # Servo for braille cell 2
-    PIN_SERVO_CELL3 = 19        # Servo for braille cell 3
-    PIN_SERVO_CELL4 = 26        # Servo for braille cell 4
+    # Default GPIO Pin Configuration
+    DEFAULT_SCROLL_BUTTON_PIN = 17
+    DEFAULT_STATUS_LED_PIN = 18
+    DEFAULT_SERVO_PINS = [12, 13, 19, 26, 16, 20, 21, 6]
     
     # Audio Configuration
     AUDIO_SAMPLE_RATE = 16000   # 16kHz for STT compatibility
@@ -68,14 +64,33 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     SERVO_MIN_DUTY = 2.5        # Duty cycle for 0 degrees
     SERVO_MAX_DUTY = 12.5       # Duty cycle for 180 degrees
     
-    def __init__(self, audio_device: int = None) -> None:
+    def __init__(
+        self,
+        audio_device: int = None,
+        scroll_button_pin: int = DEFAULT_SCROLL_BUTTON_PIN,
+        status_led_pin: int = DEFAULT_STATUS_LED_PIN,
+        servo_pins: List[int] | None = None,
+    ) -> None:
         self.logger = logging.getLogger(__name__)
         self.audio_device = audio_device
+        self.scroll_button_pin = scroll_button_pin
+        self.status_led_pin = status_led_pin
+        self.servo_pins = self._normalize_servo_pins(servo_pins)
         self.camera = None
         self.servo_pwms = {}
         self._initialized = False
         
         self._initialize_hardware()
+
+    def _normalize_servo_pins(self, servo_pins: List[int] | None) -> List[int]:
+        pins = list(servo_pins or self.DEFAULT_SERVO_PINS)
+        if len(pins) < 8:
+            self.logger.warning(
+                "Expected 8 servo GPIO pins for 4 braille cells, received %d. Falling back to defaults.",
+                len(pins),
+            )
+            return list(self.DEFAULT_SERVO_PINS)
+        return pins[:8]
     
     def _initialize_hardware(self) -> None:
         """Initialize all Raspberry Pi hardware components."""
@@ -89,23 +104,16 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             GPIO.setwarnings(False)
             
             # Setup scroll button with pull-up resistor
-            GPIO.setup(self.PIN_SCROLL_BUTTON, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            self.logger.info("Scroll button configured on GPIO %d", self.PIN_SCROLL_BUTTON)
+            GPIO.setup(self.scroll_button_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            self.logger.info("Scroll button configured on GPIO %d", self.scroll_button_pin)
             
             # Setup status LED
-            GPIO.setup(self.PIN_STATUS_LED, GPIO.OUT)
-            GPIO.output(self.PIN_STATUS_LED, GPIO.LOW)
-            self.logger.info("Status LED configured on GPIO %d", self.PIN_STATUS_LED)
+            GPIO.setup(self.status_led_pin, GPIO.OUT)
+            GPIO.output(self.status_led_pin, GPIO.LOW)
+            self.logger.info("Status LED configured on GPIO %d", self.status_led_pin)
             
-            # Setup servo motors for braille cells
-            servo_pins = [
-                self.PIN_SERVO_CELL1,
-                self.PIN_SERVO_CELL2,
-                self.PIN_SERVO_CELL3,
-                self.PIN_SERVO_CELL4
-            ]
-            
-            for i, pin in enumerate(servo_pins):
+            # Setup 8 servo motors: 2 per braille cell (left/right columns)
+            for i, pin in enumerate(self.servo_pins):
                 GPIO.setup(pin, GPIO.OUT)
                 pwm = GPIO.PWM(pin, self.SERVO_FREQ)
                 pwm.start(0)
@@ -113,7 +121,10 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
                 self.logger.info("Servo %d configured on GPIO %d", i + 1, pin)
             
             self._initialized = True
-            self.logger.info("Raspberry Pi GPIO initialization complete")
+            self.logger.info(
+                "Raspberry Pi GPIO initialization complete with servo pins %s",
+                self.servo_pins,
+            )
             
         except Exception as exc:
             self.logger.error("GPIO initialization failed: %s", exc)
@@ -233,23 +244,23 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             time.sleep(2)
             return
         
-        self.logger.info("Waiting for scroll button press on GPIO %d", self.PIN_SCROLL_BUTTON)
+        self.logger.info("Waiting for scroll button press on GPIO %d", self.scroll_button_pin)
         
         try:
             # Wait for falling edge (button press with pull-up)
-            GPIO.wait_for_edge(self.PIN_SCROLL_BUTTON, GPIO.FALLING, timeout=30000)
+            GPIO.wait_for_edge(self.scroll_button_pin, GPIO.FALLING, timeout=30000)
             
             # Debounce
             time.sleep(0.05)
             
             # Verify button is still pressed
-            if GPIO.input(self.PIN_SCROLL_BUTTON) == GPIO.LOW:
+            if GPIO.input(self.scroll_button_pin) == GPIO.LOW:
                 self.logger.info("Scroll button pressed")
                 # Brief LED flash to confirm
                 self._blink_led(1, 0.1)
                 
                 # Wait for button release
-                while GPIO.input(self.PIN_SCROLL_BUTTON) == GPIO.LOW:
+                while GPIO.input(self.scroll_button_pin) == GPIO.LOW:
                     time.sleep(0.01)
                     
         except Exception as exc:
@@ -258,18 +269,10 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     
     def display_braille_cells(self, dot_patterns: List[int]) -> None:
         """
-        Display braille patterns on the 4-cell servo-driven display.
-        
-        Each braille cell has 6 dots (2 columns x 3 rows):
-        Pattern bit mapping:
-        - Bit 0: Dot 1 (top-left)
-        - Bit 1: Dot 2 (middle-left)
-        - Bit 2: Dot 3 (bottom-left)
-        - Bit 3: Dot 4 (top-right)
-        - Bit 4: Dot 5 (middle-right)
-        - Bit 5: Dot 6 (bottom-right)
-        
-        For cam-barrel mechanism: servo angle controls which dots are raised.
+        Display one 4-cell braille slide using 8 servo motors.
+        Each cell uses two motors:
+        - left column servo controls dots 1, 2, 3
+        - right column servo controls dots 4, 5, 6
         """
         if not RPI_AVAILABLE or not self._initialized:
             # Fallback: print pattern representation
@@ -288,16 +291,15 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         
         self.logger.info("Displaying braille patterns: %s", [bin(p) for p in patterns])
         
-        # Control each servo based on dot pattern
         for cell_idx, pattern in enumerate(patterns):
-            if cell_idx in self.servo_pwms:
-                # Convert 6-bit pattern to servo angle (0-180 degrees)
-                # This maps the pattern to a cam position
-                angle = self._pattern_to_servo_angle(pattern)
-                self._set_servo_angle(cell_idx, angle)
-        
-        # Allow servos to reach position
-        time.sleep(0.3)
+            left_motor_idx = cell_idx * 2
+            right_motor_idx = left_motor_idx + 1
+            left_bits, right_bits = self._pattern_to_column_bits(pattern)
+            left_angles = self._calculate_servo_angles_for_column(left_bits)
+            right_angles = self._calculate_servo_angles_for_column(right_bits)
+
+            self._drive_servo_sequence(left_motor_idx, left_angles)
+            self._drive_servo_sequence(right_motor_idx, right_angles)
         
         # Stop PWM to reduce jitter and power consumption
         for pwm in self.servo_pwms.values():
@@ -310,17 +312,23 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             rendered.append(f"Cell{idx}:[{','.join(dots) or 'blank'}]")
         self.logger.info("Braille cells updated: %s", " ".join(rendered))
     
-    def _pattern_to_servo_angle(self, pattern: int) -> float:
-        """
-        Convert 6-bit braille dot pattern to servo angle.
-        
-        For a cam-barrel mechanism with 64 positions (6 bits = 64 patterns),
-        map the pattern directly to an angle range.
-        """
-        # Map 0-63 pattern to 0-180 degree range
-        # Each unique pattern gets a unique cam position
-        angle = (pattern / 63.0) * 180.0
-        return angle
+    def _pattern_to_column_bits(self, pattern: int) -> tuple[str, str]:
+        left_bits = "".join("1" if pattern & (1 << dot) else "0" for dot in range(3))
+        right_bits = "".join("1" if pattern & (1 << dot) else "0" for dot in range(3, 6))
+        return left_bits, right_bits
+
+    def _calculate_servo_angles_for_column(self, column_bits: str) -> List[int]:
+        angles = [((dot_position + 1) * 45) % 180 for dot_position, bit in enumerate(column_bits) if bit == "1"]
+        return angles or [0]
+
+    def _drive_servo_sequence(self, servo_idx: int, angles: List[int], hold_seconds: float = 0.3) -> None:
+        if servo_idx not in self.servo_pwms:
+            return
+
+        for angle in angles:
+            self._set_servo_angle(servo_idx, angle)
+            time.sleep(hold_seconds)
+        self.servo_pwms[servo_idx].ChangeDutyCycle(0)
     
     def _set_servo_angle(self, servo_idx: int, angle: float) -> None:
         """Set servo to specific angle (0-180 degrees)."""
@@ -348,7 +356,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         
         # Blink LED during playback
         if RPI_AVAILABLE and self._initialized:
-            GPIO.output(self.PIN_STATUS_LED, GPIO.HIGH)
+            GPIO.output(self.status_led_pin, GPIO.HIGH)
         
         try:
             # Use paplay (PulseAudio) for reliable playback through headphone
@@ -377,7 +385,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             self.logger.error("Audio playback failed: %s", exc)
         finally:
             if RPI_AVAILABLE and self._initialized:
-                GPIO.output(self.PIN_STATUS_LED, GPIO.LOW)
+                GPIO.output(self.status_led_pin, GPIO.LOW)
     
     def read_audio_path_or_text_mode(self, seconds: int) -> str:
         """
@@ -400,7 +408,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         
         # Visual feedback - LED on during recording
         if RPI_AVAILABLE and self._initialized:
-            GPIO.output(self.PIN_STATUS_LED, GPIO.HIGH)
+            GPIO.output(self.status_led_pin, GPIO.HIGH)
         
         try:
             self.logger.info("Recording %d seconds from device %s using parecord", 
@@ -445,7 +453,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             return ""
         finally:
             if RPI_AVAILABLE and self._initialized:
-                GPIO.output(self.PIN_STATUS_LED, GPIO.LOW)
+                GPIO.output(self.status_led_pin, GPIO.LOW)
     
     def _blink_led(self, times: int, duration: float) -> None:
         """Blink status LED for visual feedback."""
@@ -453,15 +461,15 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             return
         
         for _ in range(times):
-            GPIO.output(self.PIN_STATUS_LED, GPIO.HIGH)
+            GPIO.output(self.status_led_pin, GPIO.HIGH)
             time.sleep(duration)
-            GPIO.output(self.PIN_STATUS_LED, GPIO.LOW)
+            GPIO.output(self.status_led_pin, GPIO.LOW)
             time.sleep(duration)
     
     def set_status_led(self, on: bool) -> None:
         """Set status LED state."""
         if RPI_AVAILABLE and self._initialized:
-            GPIO.output(self.PIN_STATUS_LED, GPIO.HIGH if on else GPIO.LOW)
+            GPIO.output(self.status_led_pin, GPIO.HIGH if on else GPIO.LOW)
     
     def cleanup(self) -> None:
         """Clean up GPIO and hardware resources."""
@@ -473,7 +481,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         
         # Turn off LED
         if RPI_AVAILABLE and self._initialized:
-            GPIO.output(self.PIN_STATUS_LED, GPIO.LOW)
+            GPIO.output(self.status_led_pin, GPIO.LOW)
             GPIO.cleanup()
         
         # Close camera
