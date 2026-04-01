@@ -35,6 +35,10 @@ class NetraConfig:
     rpi_gpio_scroll_button: int = 17
     rpi_gpio_status_led: int = 18
     rpi_gpio_servo_pins: str = "12,13,19,26"  # Comma-separated GPIO pins for 4 servos
+    # OCR/PDF Chunking Settings
+    ocr_lines_per_chunk: int = 2
+    pdf_pages_per_chunk: int = 1
+    braille_display_delay: float = 0.5  # Delay between braille display steps in seconds
 
 
 DEFAULT_CONFIG = NetraConfig()

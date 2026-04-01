@@ -105,6 +105,9 @@ def run() -> None:
         store=store,
         hardware=hardware,
         braille_output_file=str(root / config.braille_output_file),
+        ocr_lines_per_chunk=config.ocr_lines_per_chunk,
+        pdf_pages_per_chunk=config.pdf_pages_per_chunk,
+        braille_display_delay=config.braille_display_delay,
     )
 
     parser = IntentParser(llama)

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Compatibility launcher for NETRA modular runtime."""
+"""
+Standalone test script for chunked OCR/PDF-to-braille streaming.
+
+Usage:
+    python test_ocr_braille_stream.py docs/sample.png
+    python test_ocr_braille_stream.py docs/sample.pdf --pdf-pages-per-chunk 1
+"""
 
 import argparse
 import sys
@@ -11,7 +17,6 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from netra.app import run
 from netra.config import load_config
 from netra.hardware.stub_adapter import StubHardwareAdapter
 from netra.services.braille_service import BrailleService
@@ -25,7 +30,6 @@ def render_braille_stream(
     hardware: StubHardwareAdapter,
     delay_seconds: float,
 ) -> None:
-    """Render text chunks as braille patterns with display streaming."""
     for chunk_index, text_chunk in enumerate(text_chunks, start=1):
         cleaned = text_chunk.strip()
         if not cleaned:
@@ -46,70 +50,67 @@ def render_braille_stream(
                 time.sleep(delay_seconds)
 
 
-def view_document(args: argparse.Namespace) -> int:
-    """Run document viewing mode with OCR/braille streaming."""
-    config = load_config(ROOT / "config.json")
-    
-    target_path = Path(args.document).expanduser()
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Test chunked OCR/PDF braille streaming.")
+    parser.add_argument("path", help="Path to a PDF or image file.")
+    parser.add_argument(
+        "--ocr-lines-per-chunk",
+        type=int,
+        default=2,
+        help="Number of OCR text lines to group into one streamed chunk.",
+    )
+    parser.add_argument(
+        "--pdf-pages-per-chunk",
+        type=int,
+        default=1,
+        help="Number of PDF pages to group into one streamed chunk.",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.5,
+        help="Delay between 4-cell braille display steps.",
+    )
+    args = parser.parse_args()
+
+    target_path = Path(args.path).expanduser()
     if not target_path.is_absolute():
         target_path = (ROOT / target_path).resolve()
 
     if not target_path.exists():
-        print(f"Error: File not found: {target_path}")
+        print(f"File not found: {target_path}")
         return 1
 
-    # Initialize services
+    config = load_config(ROOT / "config.json")
     ocr = OCRService()
     docs = DocumentService(config.docs_dir, ocr)
     braille = BrailleService(config.braille_table, config.braille_cells)
     hardware = StubHardwareAdapter()
 
-    # Extract text chunks using config values
     text_chunks = docs.extract_text_chunks(
         str(target_path),
-        pdf_pages_per_chunk=config.pdf_pages_per_chunk,
-        ocr_lines_per_chunk=config.ocr_lines_per_chunk,
+        pdf_pages_per_chunk=args.pdf_pages_per_chunk,
+        ocr_lines_per_chunk=args.ocr_lines_per_chunk,
     )
     text_chunks = [chunk for chunk in text_chunks if chunk.strip()]
 
     if not text_chunks:
-        print("Error: No readable text found in document.")
+        print("No readable text found.")
         return 1
 
-    # Display document information
     print("=" * 60)
-    print("NETRA Document Viewer - OCR/Braille Stream")
+    print("NETRA Chunked OCR/Braille Stream Test")
     print("=" * 60)
     print(f"Source: {target_path}")
     print(f"Text chunks: {len(text_chunks)}")
     print(f"Braille cells per display step: {config.braille_cells}")
-    print(f"OCR lines per chunk: {config.ocr_lines_per_chunk}")
-    print(f"PDF pages per chunk: {config.pdf_pages_per_chunk}")
 
-    # Render braille stream
-    render_braille_stream(text_chunks, braille, hardware, config.braille_display_delay)
+    render_braille_stream(text_chunks, braille, hardware, args.delay)
 
     print()
-    print("Document viewing complete.")
+    print("Streaming test complete.")
     return 0
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="NETRA - AI-powered assistive device for visually impaired users"
-    )
-    parser.add_argument(
-        "--view",
-        dest="document",
-        metavar="FILE",
-        help="View a document with OCR/braille streaming (PDF or image file)",
-    )
-    
-    args = parser.parse_args()
-    
-    if args.document:
-        # Document viewing mode
-        sys.exit(view_document(args))
-    else:
-        # Normal interactive mode
-        run()
+    raise SystemExit(main())

@@ -2,6 +2,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import List
 import logging
+import time
 
 from netra.models.types import CommandIntent, DocumentRef, SessionState
 from netra.services.braille_service import BrailleService
@@ -29,6 +30,9 @@ class ConversationAgent:
         store: StoreService,
         hardware: HardwareAdapter,
         braille_output_file: str,
+        ocr_lines_per_chunk: int = 2,
+        pdf_pages_per_chunk: int = 1,
+        braille_display_delay: float = 0.5,
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self.state = state
@@ -41,6 +45,9 @@ class ConversationAgent:
         self.hardware = hardware
         self.pending_note = ""
         self.braille_output_file = braille_output_file
+        self.ocr_lines_per_chunk = ocr_lines_per_chunk
+        self.pdf_pages_per_chunk = pdf_pages_per_chunk
+        self.braille_display_delay = braille_display_delay
 
     def handle_intent(self, intent: CommandIntent) -> None:
         action = intent.action
@@ -95,7 +102,11 @@ class ConversationAgent:
             if not self.state.current_doc_text:
                 self._say("No active document. Say open file first.")
                 return
-            self._render_text(self.state.current_doc_text)
+            # Use chunked streaming if we have a document path
+            if self.state.current_doc_path:
+                self._read_document_chunked(self.state.current_doc_path)
+            else:
+                self._render_text(self.state.current_doc_text)
             return
 
         if action == "summarize":
@@ -260,6 +271,7 @@ class ConversationAgent:
 
         doc = self.documents[self.state.current_doc_index]
         self.state.current_doc_name = doc.name
+        self.state.current_doc_path = doc.path
         self.state.current_doc_text = self.document_service.extract_text(doc.path)
         if not self.state.current_doc_text:
             self._say("Document loaded but no readable text found.")
@@ -275,22 +287,71 @@ class ConversationAgent:
                 self._say("I could not access the camera. Please check the hardware connection.")
                 return
 
-            self._say("Image captured. Analyzing text, please wait.")
-            text = self.document_service.extract_ocr_from_camera_image(image_path)
-            if not text:
+            self._say("Image captured. Analyzing text in live chunks, please wait.")
+            chunks = self.document_service.extract_ocr_chunks_from_camera_image(
+                image_path,
+                lines_per_chunk=self.ocr_lines_per_chunk,
+            )
+            if not chunks:
                 self.logger.warning("OCR confidence too low for image %s", image_path)
                 self._say("The image was too blurry or poorly lit. Please try capturing again with better alignment and light.")
                 return
 
+            text = "\n".join(chunks)
             self.state.current_doc_text = text
             self.state.current_doc_name = "camera_capture"
+            self.state.current_doc_path = image_path
             note_name = f"ocr_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             self.store.save_note(note_name, text)
-            self._say("Text extraction complete. I have saved it to your notes. Reading now.")
-            self._render_text(text)
+            self._say("Text extraction complete. I have saved it to your notes. Streaming it now.")
+            self._render_text_stream(chunks)
         except Exception as exc:
             self.logger.error("Camera capture flow failed: %s", exc)
             self._say("Something went wrong during the camera capture process.")
+
+    def _read_document_chunked(self, path: str) -> None:
+        """Read a document using chunked streaming with config-based chunk sizes."""
+        try:
+            text_chunks = self.document_service.extract_text_chunks(
+                path,
+                pdf_pages_per_chunk=self.pdf_pages_per_chunk,
+                ocr_lines_per_chunk=self.ocr_lines_per_chunk,
+            )
+            text_chunks = [chunk for chunk in text_chunks if chunk.strip()]
+            
+            if not text_chunks:
+                self._say("No readable text found in the document.")
+                return
+            
+            self.logger.info("Streaming %d text chunks from document", len(text_chunks))
+            self._render_text_stream_with_delay(text_chunks)
+        except Exception as exc:
+            self.logger.error("Chunked document reading failed: %s", exc)
+            self._say("I encountered an error while reading the document.")
+
+    def _render_text_stream_with_delay(self, chunks: List[str]) -> None:
+        """Render text chunks with braille streaming and configurable delay."""
+        cleaned_chunks = [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
+        if not cleaned_chunks:
+            self._say("Nothing to read.")
+            return
+
+        full_text = "\n".join(cleaned_chunks)
+        self.state.last_output = full_text
+        self._export_braille_text(full_text)
+
+        for chunk_index, chunk in enumerate(cleaned_chunks, start=1):
+            self.logger.info("Streaming chunk %d/%d", chunk_index, len(cleaned_chunks))
+            self.tts.speak(chunk, self.hardware)
+            
+            # Render braille with delay between display steps
+            _, patterns = self.braille.text_to_patterns(chunk)
+            braille_chunks = self.braille.chunk_patterns(patterns)
+            
+            for display_index, display_chunk in enumerate(braille_chunks, start=1):
+                self.hardware.display_braille_cells(display_chunk)
+                if display_index < len(braille_chunks):
+                    time.sleep(self.braille_display_delay)
 
     def _llm_task(self, instruction: str, source_text: str) -> None:
         if not source_text:
@@ -336,9 +397,30 @@ class ConversationAgent:
         self.state.last_output = text
 
         self.tts.speak(text, self.hardware)
+        self._export_braille_text(text)
+        self._render_braille_text(text)
 
+    def _render_text_stream(self, chunks: List[str]) -> None:
+        cleaned_chunks = [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
+        if not cleaned_chunks:
+            self._say("Nothing to read.")
+            return
+
+        full_text = "\n".join(cleaned_chunks)
+        self.state.last_output = full_text
+        self._export_braille_text(full_text)
+
+        for chunk in cleaned_chunks:
+            self.tts.speak(chunk, self.hardware)
+            self._render_braille_text(chunk)
+
+    def _export_braille_text(self, text: str) -> None:
         _, patterns = self.braille.text_to_patterns(text)
-        unicode_braille = self.braille.export_unicode_braille(patterns, self.braille_output_file)
+        self.braille.export_unicode_braille(patterns, self.braille_output_file)
+
+    def _render_braille_text(self, text: str) -> None:
+        _, patterns = self.braille.text_to_patterns(text)
+        unicode_braille = self.braille.patterns_to_unicode(patterns)
         preview = unicode_braille[:80].replace("\n", " ")
         self.logger.info("Braille unicode preview: %s", preview)
         chunks = self.braille.chunk_patterns(patterns)

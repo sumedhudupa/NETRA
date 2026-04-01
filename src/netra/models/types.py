@@ -19,5 +19,6 @@ class SessionState:
     current_doc_index: int = 0
     current_doc_text: str = ""
     current_doc_name: str = ""
+    current_doc_path: str = ""
     running: bool = True
     last_output: str = ""

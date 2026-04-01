@@ -8,7 +8,7 @@ vosk==0.3.45
 soundfile==0.13.1
 sounddevice==0.5.2
 numpy==2.2.6
-llama-cpp-python==0.2.90
+# llama-cpp-python==0.2.90
 
 # Raspberry Pi specific (install only on RPi)
 # RPi.GPIO==0.7.1
