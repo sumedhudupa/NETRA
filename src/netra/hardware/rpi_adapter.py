@@ -70,12 +70,18 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         scroll_button_pin: int = DEFAULT_SCROLL_BUTTON_PIN,
         status_led_pin: int = DEFAULT_STATUS_LED_PIN,
         servo_pins: List[int] | None = None,
+        usb_camera_device: str = "/dev/video0",
+        usb_camera_width: int = 1920,
+        usb_camera_height: int = 1080,
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self.audio_device = audio_device
         self.scroll_button_pin = scroll_button_pin
         self.status_led_pin = status_led_pin
         self.servo_pins = self._normalize_servo_pins(servo_pins)
+        self.usb_camera_device = usb_camera_device
+        self.usb_camera_width = usb_camera_width
+        self.usb_camera_height = usb_camera_height
         self.camera = None
         self.servo_pwms = {}
         self._initialized = False
@@ -195,7 +201,8 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             result = subprocess.run(
                 [
                     "fswebcam",
-                    "-r", "1280x720",
+                    "-d", self.usb_camera_device,
+                    "-r", f"{self.usb_camera_width}x{self.usb_camera_height}",
                     "--no-banner",
                     "-S", "10",  # Skip 10 frames for auto-exposure
                     output_path
@@ -205,7 +212,13 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
                 timeout=15
             )
             if result.returncode == 0 and Path(output_path).exists():
-                self.logger.info("Image captured with fswebcam: %s", output_path)
+                self.logger.info(
+                    "Image captured with fswebcam device %s at %sx%s: %s",
+                    self.usb_camera_device,
+                    self.usb_camera_width,
+                    self.usb_camera_height,
+                    output_path,
+                )
                 return output_path
         except Exception as exc:
             self.logger.error("USB webcam capture failed: %s", exc)

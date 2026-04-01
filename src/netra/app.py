@@ -53,6 +53,9 @@ def _create_hardware_adapter(config):
                 scroll_button_pin=config.rpi_gpio_scroll_button,
                 status_led_pin=config.rpi_gpio_status_led,
                 servo_pins=servo_pins,
+                usb_camera_device=config.usb_camera_device,
+                usb_camera_width=config.usb_camera_width,
+                usb_camera_height=config.usb_camera_height,
             )
         except ImportError as exc:
             logger.warning("RPi adapter import failed: %s, falling back to stub", exc)

@@ -35,6 +35,9 @@ class NetraConfig:
     rpi_gpio_scroll_button: int = 17
     rpi_gpio_status_led: int = 18
     rpi_gpio_servo_pins: str = "12,13,19,26,16,20,21,6"  # Comma-separated GPIO pins for 8 servos
+    usb_camera_device: str = "/dev/video0"
+    usb_camera_width: int = 1920
+    usb_camera_height: int = 1080
     # OCR/PDF Chunking Settings
     ocr_lines_per_chunk: int = 2
     pdf_pages_per_chunk: int = 1
