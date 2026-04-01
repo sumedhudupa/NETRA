@@ -50,7 +50,7 @@ class DocumentService:
             return text
         return ""
 
-    def extract_ocr_from_camera_image(self, image_path: str, min_confidence: float = 50.0) -> Optional[str]:
+    def extract_ocr_from_camera_image(self, image_path: str, min_confidence: float = 0.0) -> Optional[str]:
         image = Image.open(image_path)
         text, confidence = self.ocr_service.extract_text_with_confidence(image)
         if confidence < min_confidence:
@@ -60,7 +60,7 @@ class DocumentService:
     def extract_ocr_chunks_from_camera_image(
         self,
         image_path: str,
-        min_confidence: float = 50.0,
+        min_confidence: float = 0.0,
         lines_per_chunk: int = 2,
     ) -> Optional[List[str]]:
         image = Image.open(image_path)

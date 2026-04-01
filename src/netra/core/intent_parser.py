@@ -53,17 +53,31 @@ class IntentParser:
         if "time" in text:
             return CommandIntent("time")
 
+        if self._is_generic_open_request(text):
+            if len(doc_names) == 1:
+                return CommandIntent("open_by_name", doc_names[0])
+            if doc_names:
+                return CommandIntent("list_docs")
+
         match = re.search(r"open\s+(?:file\s+)?(\d+)", text)
         if match:
             return CommandIntent("open_by_index", match.group(1))
 
         if text.startswith("open "):
             query = text.replace("open ", "", 1).strip()
+            cleaned_query = self._normalize_open_query(query)
+            if cleaned_query in {"", "file", "document"}:
+                if len(doc_names) == 1:
+                    return CommandIntent("open_by_name", doc_names[0])
+                if doc_names:
+                    return CommandIntent("list_docs")
             if query:
-                closest = self._closest_doc_name(query, doc_names)
+                closest = self._closest_doc_name(cleaned_query or query, doc_names)
                 if closest:
                     return CommandIntent("open_by_name", closest)
-                return CommandIntent("open_by_name", query)
+                if len(doc_names) == 1 and self._looks_like_stt_open_error(cleaned_query or query):
+                    return CommandIntent("open_by_name", doc_names[0])
+                return CommandIntent("open_by_name", cleaned_query or query)
 
         llm_intent = self._llm_parse(text, doc_names)
         return llm_intent if llm_intent.action != "unknown" else CommandIntent("general_query", text)
@@ -75,6 +89,43 @@ class IntentParser:
             return ""
         index = stems.index(matched[0])
         return doc_names[index]
+
+    def _is_generic_open_request(self, text: str) -> bool:
+        generic_phrases = {
+            "open file",
+            "open the file",
+            "open document",
+            "open the document",
+            "open my document",
+            "open my file",
+        }
+        return text in generic_phrases
+
+    def _normalize_open_query(self, query: str) -> str:
+        normalized = query.strip().lower()
+        prefixes = (
+            "the ",
+            "my ",
+            "a ",
+            "an ",
+        )
+        changed = True
+        while changed:
+            changed = False
+            for prefix in prefixes:
+                if normalized.startswith(prefix):
+                    normalized = normalized[len(prefix):].strip()
+                    changed = True
+        return normalized
+
+    def _looks_like_stt_open_error(self, query: str) -> bool:
+        tokens = [token for token in re.split(r"\s+", query.strip().lower()) if token]
+        if not tokens:
+            return False
+        noise_tokens = {
+            "file", "document", "one", "won", "find", "fine", "by", "it", "watched",
+        }
+        return all(token in noise_tokens for token in tokens)
 
     def _llm_parse(self, command: str, doc_names: List[str]) -> CommandIntent:
         if not self.llama.is_available():
