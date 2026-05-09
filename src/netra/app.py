@@ -50,6 +50,8 @@ def _create_hardware_adapter(config):
             servo_pins = [int(pin.strip()) for pin in config.rpi_gpio_servo_pins.split(",") if pin.strip()]
             return RaspberryPiHardwareAdapter(
                 audio_device=config.rpi_audio_device,
+                audio_output_device=config.rpi_audio_output_device,
+                bt_speaker_mac=config.rpi_bt_speaker_mac,
                 scroll_button_pin=config.rpi_gpio_scroll_button,
                 status_led_pin=config.rpi_gpio_status_led,
                 servo_pins=servo_pins,
@@ -63,7 +65,12 @@ def _create_hardware_adapter(config):
     # Fallback to stub adapter
     from netra.hardware.stub_adapter import StubHardwareAdapter
     logger.info("Using stub hardware adapter")
-    return StubHardwareAdapter()
+    return StubHardwareAdapter(
+        audio_device=config.rpi_audio_device,
+        sample_rate=config.audio_sample_rate,
+        audio_output_device=config.rpi_audio_output_device,
+        bt_speaker_mac=config.rpi_bt_speaker_mac,
+    )
 
 
 def run() -> None:

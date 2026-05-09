@@ -66,7 +66,9 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     
     def __init__(
         self,
-        audio_device: int = None,
+        audio_device: int | str | None = None,
+        audio_output_device: str | None = None,
+        bt_speaker_mac: str | None = None,
         scroll_button_pin: int = DEFAULT_SCROLL_BUTTON_PIN,
         status_led_pin: int = DEFAULT_STATUS_LED_PIN,
         servo_pins: List[int] | None = None,
@@ -76,6 +78,8 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self.audio_device = audio_device
+        self.audio_output_device = audio_output_device
+        self.bt_speaker_mac = bt_speaker_mac
         self.scroll_button_pin = scroll_button_pin
         self.status_led_pin = status_led_pin
         self.servo_pins = self._normalize_servo_pins(servo_pins)
@@ -357,39 +361,76 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         self.servo_pwms[servo_idx].ChangeDutyCycle(duty)
     
     def play_wav(self, wav_path: str) -> None:
-        """
-        Play audio file through speaker.
-        Uses paplay (PulseAudio) for reliable playback on Raspberry Pi.
+        """Play audio file through speaker.
+
+        Supports:
+        - PipeWire/PulseAudio sinks via paplay --device=<sink>
+        - ALSA devices via aplay -D <device>
+
+        If a Bluetooth MAC is provided, we derive a default sink name:
+        bluez_output.<MAC_WITH_UNDERSCORES>.a2dp_sink
         """
         if not Path(wav_path).exists():
             self.logger.error("Audio file not found: %s", wav_path)
             return
-        
-        self.logger.info("Playing audio: %s", wav_path)
-        
+
+        def bt_sink_name(mac: str) -> str:
+            normalized = mac.strip().upper().replace(":", "_")
+            return f"bluez_output.{normalized}.a2dp_sink"
+
+        def looks_like_alsa_device(dev: str) -> bool:
+            return dev.startswith(("hw:", "plughw:", "sysdefault:", "dmix:", "default:"))
+
+        target = self.audio_output_device
+        if not target and self.bt_speaker_mac:
+            target = bt_sink_name(self.bt_speaker_mac)
+
+        self.logger.info("Playing audio: %s (target=%s)", wav_path, target or "default")
+
         # Blink LED during playback
         if RPI_AVAILABLE and self._initialized:
             GPIO.output(self.status_led_pin, GPIO.HIGH)
-        
+
         try:
-            # Use paplay (PulseAudio) for reliable playback through headphone
+            # 1) If a target is provided, try targeted playback first.
+            if target:
+                if looks_like_alsa_device(target):
+                    result = subprocess.run(
+                        ["aplay", "-q", "-D", target, wav_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    if result.returncode == 0:
+                        return
+                    self.logger.warning("aplay -D failed: %s", (result.stderr or "").strip())
+                else:
+                    result = subprocess.run(
+                        ["paplay", f"--device={target}", wav_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
+                    )
+                    if result.returncode == 0:
+                        return
+                    self.logger.warning("paplay --device failed: %s", (result.stderr or "").strip())
+
+            # 2) Fallback: default paplay, then aplay.
             result = subprocess.run(
                 ["paplay", wav_path],
                 capture_output=True,
                 text=True,
-                timeout=120  # 2 minute timeout for long audio
+                timeout=120,
             )
-            
             if result.returncode != 0:
-                self.logger.warning("paplay failed: %s, trying aplay", result.stderr)
-                # Fallback to aplay
+                self.logger.warning("paplay failed: %s, trying aplay", (result.stderr or "").strip())
                 subprocess.run(
                     ["aplay", "-q", wav_path],
                     capture_output=True,
                     text=True,
-                    timeout=120
+                    timeout=120,
                 )
-                
+
         except FileNotFoundError:
             self.logger.error("Audio player not found (paplay/aplay)")
         except subprocess.TimeoutExpired:
@@ -408,58 +449,67 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         return ""  # Return empty to trigger live microphone recording in STT service
     
     def record_audio(self, seconds: int) -> str:
-        """
-        Record audio from headphone/microphone using parecord (PulseAudio).
-        Returns path to recorded WAV file.
-        
-        This is called by STT service for voice input.
-        """
+        """Record audio from the USB microphone and return a WAV path."""
         output_dir = Path("/tmp/netra_audio")
         output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = int(time.time() * 1000)
         output_path = str(output_dir / f"recording_{timestamp}.wav")
-        
+
+        seconds = max(1, int(seconds))
+
         # Visual feedback - LED on during recording
         if RPI_AVAILABLE and self._initialized:
             GPIO.output(self.status_led_pin, GPIO.HIGH)
-        
+
+        def resolve_alsa_device(dev: int | str | None) -> str | None:
+            if dev is None:
+                return None
+            if isinstance(dev, str) and dev.isdigit():
+                dev = int(dev)
+            if isinstance(dev, int):
+                return f"plughw:{dev},0"
+            return str(dev)
+
         try:
-            self.logger.info("Recording %d seconds from device %s using parecord", 
-                           seconds, self.audio_device)
-            
-            # Build parecord command
+            alsa_device = resolve_alsa_device(self.audio_device)
+            if alsa_device is None:
+                # Sensible default for the common "USB mic shows up as card1" case.
+                alsa_device = "plughw:1,0"
+
+            self.logger.info("Recording %d seconds from ALSA device %s using arecord", seconds, alsa_device)
+
             cmd = [
-                "parecord",
-                f"--channels={self.AUDIO_CHANNELS}",
-                f"--rate={self.AUDIO_SAMPLE_RATE}",
-                f"--format=s16le",
-                output_path
+                "arecord",
+                "-q",
+                "-D",
+                alsa_device,
+                "-f",
+                "S16_LE",
+                "-c",
+                str(self.AUDIO_CHANNELS),
+                "-r",
+                str(self.AUDIO_SAMPLE_RATE),
+                "-d",
+                str(seconds),
+                output_path,
             ]
-            
-            # Add device parameter if specified
-            if self.audio_device is not None:
-                cmd.insert(1, f"--device={self.audio_device}")
-            
-            # Start recording process
-            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            
-            # Wait for specified duration
-            time.sleep(seconds)
-            
-            # Stop recording
-            proc.terminate()
-            proc.wait(timeout=2)
-            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=seconds + 10)
+            if result.returncode != 0:
+                self.logger.error("arecord failed: %s", (result.stderr or "").strip())
+                return ""
+
             if Path(output_path).exists():
                 self.logger.info("Audio recorded successfully: %s", output_path)
                 return output_path
-            else:
-                self.logger.error("Recording file was not created")
-                return ""
-            
+
+            self.logger.error("Recording file was not created")
+            return ""
+
+        except FileNotFoundError:
+            self.logger.error("arecord not found; install alsa-utils")
+            return ""
         except subprocess.TimeoutExpired:
-            proc.kill()
-            self.logger.error("Recording process killed (timeout)")
+            self.logger.error("Audio recording timed out")
             return ""
         except Exception as exc:
             self.logger.error("Audio recording failed: %s", exc)

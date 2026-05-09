@@ -14,6 +14,10 @@ RUN apt-get update && apt-get install -y \
     # Audio (required by whisper + piper)
     ffmpeg \
     libsndfile1 \
+    libportaudio2 \
+    portaudio19-dev \
+    alsa-utils \
+    pulseaudio-utils \
     # Build tools for llama-cpp-python
     build-essential \
     cmake \
@@ -37,6 +41,8 @@ RUN pip install --break-system-packages \
     pathvalidate==3.3.1 \
     # STT / wake word
     openai-whisper==20250625 \
+    vosk==0.3.45 \
+    sounddevice==0.5.2 \
     # Audio / math
     soundfile==0.13.1 \
     numpy==2.2.6 \

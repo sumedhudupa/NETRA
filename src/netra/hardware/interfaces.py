@@ -20,6 +20,11 @@ class HardwareAdapter(ABC):
         pass
 
     @abstractmethod
+    def record_audio(self, seconds: int) -> str:
+        """Record audio from microphone and return path to WAV (or "" on failure)."""
+        pass
+
+    @abstractmethod
     def read_audio_path_or_text_mode(self, seconds: int) -> str:
         """
         Return path to wav file or empty string to use typed text fallback.

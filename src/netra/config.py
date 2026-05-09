@@ -31,7 +31,18 @@ class NetraConfig:
     braille_output_file: str = "logs/last_output.brl"
     # Raspberry Pi Hardware Settings
     hardware_mode: str = "auto"  # "auto", "rpi", or "stub"
-    rpi_audio_device: int = None  # None = default, or ALSA card number
+
+    # Microphone / capture:
+    # - ALSA capture device string (e.g. "plughw:1,0") or card number (e.g. 1).
+    rpi_audio_device: int | str | None = None
+
+    # Speaker / playback:
+    # - For PipeWire/PulseAudio: sink name (e.g. "bluez_output.41_42_24_79_DD_C1.a2dp_sink")
+    # - For ALSA: device string (e.g. "plughw:CARD=vc4hdmi0,DEV=0")
+    rpi_audio_output_device: str | None = None
+    # If set, we derive a Bluetooth sink name: bluez_output.<MAC_WITH_UNDERSCORES>.a2dp_sink
+    rpi_bt_speaker_mac: str | None = None
+
     rpi_gpio_scroll_button: int = 17
     rpi_gpio_status_led: int = 18
     rpi_gpio_servo_pins: str = "12,13,19,26,16,20,21,6"  # Comma-separated GPIO pins for 8 servos
