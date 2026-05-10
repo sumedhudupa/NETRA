@@ -367,23 +367,70 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         - PipeWire/PulseAudio sinks via paplay --device=<sink>
         - ALSA devices via aplay -D <device>
 
-        If a Bluetooth MAC is provided, we derive a default sink name:
-        bluez_output.<MAC_WITH_UNDERSCORES>.a2dp_sink
+        Bluetooth speaker handling (PipeWire):
+        - If bt_speaker_mac is set, we try to force the BT card profile to A2DP first
+          (a2dp-sink / a2dp_sink) and then discover the actual bluez_output sink via pactl.
+        - If no sink appears (e.g., WirePlumber not running / negotiation still pending),
+          we fall back to default playback (which may end up as auto_null).
         """
         if not Path(wav_path).exists():
             self.logger.error("Audio file not found: %s", wav_path)
             return
 
-        def bt_sink_name(mac: str) -> str:
-            normalized = mac.strip().upper().replace(":", "_")
-            return f"bluez_output.{normalized}.a2dp_sink"
+        def normalize_mac(mac: str) -> str:
+            return mac.strip().upper().replace(":", "_")
+
+        def bt_card_name(mac: str) -> str:
+            return f"bluez_card.{normalize_mac(mac)}"
 
         def looks_like_alsa_device(dev: str) -> bool:
             return dev.startswith(("hw:", "plughw:", "sysdefault:", "dmix:", "default:"))
 
+        def pactl(*args: str) -> tuple[int, str, str]:
+            try:
+                proc = subprocess.run(["pactl", *args], capture_output=True, text=True, timeout=5)
+                return proc.returncode, proc.stdout or "", proc.stderr or ""
+            except FileNotFoundError:
+                return 127, "", "pactl not found"
+            except Exception as exc:
+                return 1, "", str(exc)
+
+        def ensure_bt_a2dp(mac: str) -> None:
+            card = bt_card_name(mac)
+            for profile in ("a2dp-sink", "a2dp_sink"):
+                rc, _, err = pactl("set-card-profile", card, profile)
+                if rc == 0:
+                    self.logger.info("Bluetooth card %s set to profile %s", card, profile)
+                    return
+                self.logger.debug("pactl set-card-profile %s %s failed: %s", card, profile, (err or "").strip())
+
+        def discover_bt_sink(mac: str, timeout_s: int = 10) -> str | None:
+            needle = normalize_mac(mac)
+            deadline = time.time() + timeout_s
+            while time.time() < deadline:
+                rc, out, _ = pactl("list", "short", "sinks")
+                if rc == 0:
+                    for line in out.splitlines():
+                        parts = line.split("\t")
+                        if len(parts) >= 2:
+                            sink_name = parts[1]
+                            if sink_name.startswith("bluez_output.") and needle in sink_name.upper():
+                                return sink_name
+                time.sleep(1)
+            return None
+
         target = self.audio_output_device
-        if not target and self.bt_speaker_mac:
-            target = bt_sink_name(self.bt_speaker_mac)
+
+        # If configured for BT speaker, ensure A2DP and discover real sink name.
+        if self.bt_speaker_mac:
+            ensure_bt_a2dp(self.bt_speaker_mac)
+            if not target:
+                discovered = discover_bt_sink(self.bt_speaker_mac, timeout_s=10)
+                if discovered:
+                    target = discovered
+                else:
+                    # As a last guess, try the canonical pipewire-pulse sink name.
+                    target = f"bluez_output.{normalize_mac(self.bt_speaker_mac)}.a2dp_sink"
 
         self.logger.info("Playing audio: %s (target=%s)", wav_path, target or "default")
 

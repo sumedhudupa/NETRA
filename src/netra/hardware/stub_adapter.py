@@ -72,16 +72,54 @@ class StubHardwareAdapter(HardwareAdapter):
             self.logger.info("Audio playback stub fallback used")
             return
 
-        def bt_sink_name(mac: str) -> str:
-            normalized = mac.strip().upper().replace(":", "_")
-            return f"bluez_output.{normalized}.a2dp_sink"
+        def normalize_mac(mac: str) -> str:
+            return mac.strip().upper().replace(":", "_")
+
+        def bt_card_name(mac: str) -> str:
+            return f"bluez_card.{normalize_mac(mac)}"
 
         def looks_like_alsa_device(dev: str) -> bool:
             return dev.startswith(("hw:", "plughw:", "sysdefault:", "dmix:", "default:"))
 
+        def pactl(*args: str) -> tuple[int, str, str]:
+            try:
+                proc = subprocess.run(["pactl", *args], capture_output=True, text=True, timeout=5)
+                return proc.returncode, proc.stdout or "", proc.stderr or ""
+            except FileNotFoundError:
+                return 127, "", "pactl not found"
+            except Exception as exc:
+                return 1, "", str(exc)
+
+        def ensure_bt_a2dp(mac: str) -> None:
+            card = bt_card_name(mac)
+            for profile in ("a2dp-sink", "a2dp_sink"):
+                rc, _, _ = pactl("set-card-profile", card, profile)
+                if rc == 0:
+                    return
+
+        def discover_bt_sink(mac: str, timeout_s: int = 10) -> str | None:
+            needle = normalize_mac(mac)
+            deadline = time.time() + timeout_s
+            while time.time() < deadline:
+                rc, out, _ = pactl("list", "short", "sinks")
+                if rc == 0:
+                    for line in out.splitlines():
+                        parts = line.split("\t")
+                        if len(parts) >= 2:
+                            sink_name = parts[1]
+                            if sink_name.startswith("bluez_output.") and needle in sink_name.upper():
+                                return sink_name
+                time.sleep(1)
+            return None
+
         target = self.audio_output_device
-        if not target and self.bt_speaker_mac:
-            target = bt_sink_name(self.bt_speaker_mac)
+
+        if self.bt_speaker_mac:
+            ensure_bt_a2dp(self.bt_speaker_mac)
+            if not target:
+                target = discover_bt_sink(self.bt_speaker_mac, timeout_s=10)
+                if not target:
+                    target = f"bluez_output.{normalize_mac(self.bt_speaker_mac)}.a2dp_sink"
 
         # Try Pulse/PipeWire first (typical on RPi), then ALSA.
         try:
