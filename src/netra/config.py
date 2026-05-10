@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional
 
 
 @dataclass
@@ -33,26 +34,29 @@ class NetraConfig:
     hardware_mode: str = "auto"  # "auto", "rpi", or "stub"
 
     # Microphone / capture:
-    # - ALSA capture device string (e.g. "plughw:1,0") or card number (e.g. 1).
     rpi_audio_device: int | str | None = None
 
     # Speaker / playback:
-    # - For PipeWire/PulseAudio: sink name (e.g. "bluez_output.41_42_24_79_DD_C1.a2dp_sink")
-    # - For ALSA: device string (e.g. "plughw:CARD=vc4hdmi0,DEV=0")
     rpi_audio_output_device: str | None = None
-    # If set, we derive a Bluetooth sink name: bluez_output.<MAC_WITH_UNDERSCORES>.a2dp_sink
     rpi_bt_speaker_mac: str | None = None
 
     rpi_gpio_scroll_button: int = 17
     rpi_gpio_status_led: int = 18
     rpi_gpio_servo_pins: str = "12,13,19,26,16,20,21,6"  # Comma-separated GPIO pins for 8 servos
+
+    # Stepper motor support (lgpio-driven stepper/ULN2003)
+    rpi_stepper_enabled: bool = False
+    rpi_stepper_motor_pins: Optional[List[List[int]]] = None
+    rpi_stepper_steps_per_revolution: float = 4076.0
+    rpi_stepper_step_delay_sec: float = 0.0009
+
     usb_camera_device: str = "/dev/video0"
     usb_camera_width: int = 1920
     usb_camera_height: int = 1080
     # OCR/PDF Chunking Settings
     ocr_lines_per_chunk: int = 2
     pdf_pages_per_chunk: int = 1
-    braille_display_delay: float = 3.0  # Delay between 4-cell braille slides in seconds
+    braille_display_delay: float = 3.0  # Delay between braille slides in seconds
 
 
 DEFAULT_CONFIG = NetraConfig()

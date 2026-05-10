@@ -53,12 +53,15 @@ class StubHardwareAdapter(HardwareAdapter):
     def wait_for_scroll(self) -> None:
         time.sleep(0.8)
 
-    def display_braille_cells(self, dot_patterns: List[int]) -> None:
+    def display_braille_cells(self, dot_patterns: List[int], chars: List[str] | None = None) -> None:
         rendered = []
         for index, pattern in enumerate(dot_patterns, start=1):
             dots = [str(dot + 1) for dot in range(6) if pattern & (1 << dot)]
-            rendered.append(f"Cell{index}:[{','.join(dots)}]")
+            rendered.append(f"Cell{index}:[{','.join(dots) or 'blank'}]")
         print("[HW STUB] Braille:", " ".join(rendered))
+
+    def display_capacity_chars(self) -> int:
+        return 4
 
     def play_wav(self, wav_path: str) -> None:
         print(f"[HW STUB] Playing audio: {wav_path}")

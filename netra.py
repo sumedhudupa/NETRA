@@ -11,9 +11,8 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from netra.app import run
+from netra.app import run, _create_hardware_adapter
 from netra.config import load_config
-from netra.hardware.stub_adapter import StubHardwareAdapter
 from netra.services.braille_service import BrailleService
 from netra.services.document_service import DocumentService
 from netra.services.ocr_service import OCRService
@@ -22,7 +21,7 @@ from netra.services.ocr_service import OCRService
 def render_braille_stream(
     text_chunks: list[str],
     braille: BrailleService,
-    hardware: StubHardwareAdapter,
+    hardware,
     delay_seconds: float,
 ) -> None:
     """Render text chunks as braille patterns with display streaming."""
@@ -35,14 +34,32 @@ def render_braille_stream(
         print(f"[TEXT CHUNK {chunk_index}]")
         print(cleaned)
 
-        _, patterns = braille.text_to_patterns(cleaned)
-        braille_chunks = braille.chunk_patterns(patterns)
-        print(f"[BRAILLE CHUNK {chunk_index}] {len(braille_chunks)} display step(s)")
+        contracted, patterns = braille.text_to_patterns(cleaned)
+        
+        # Get hardware capacity and chunk by characters
+        try:
+            cap = max(1, int(hardware.display_capacity_chars()))
+        except Exception:
+            cap = braille.cells
+        
+        # Build character-aligned chunks
+        chars = list(contracted)
+        chunks = []
+        for i in range(0, len(patterns), cap):
+            pchunk = patterns[i:i+cap]
+            cchunk = chars[i:i+cap]
+            # Pad to capacity
+            if len(pchunk) < cap:
+                pchunk = pchunk + [0] * (cap - len(pchunk))
+                cchunk = cchunk + [' '] * (cap - len(cchunk))
+            chunks.append((pchunk, cchunk))
+        
+        print(f"[BRAILLE CHUNK {chunk_index}] {len(chunks)} display step(s)")
 
-        for display_index, display_chunk in enumerate(braille_chunks, start=1):
-            print(f"  Step {display_index}/{len(braille_chunks)}")
-            hardware.display_braille_cells(display_chunk)
-            if display_index < len(braille_chunks):
+        for display_index, (pattern_chunk, char_chunk) in enumerate(chunks, start=1):
+            print(f"  Step {display_index}/{len(chunks)}")
+            hardware.display_braille_cells(pattern_chunk, char_chunk)
+            if display_index < len(chunks):
                 time.sleep(delay_seconds)
 
 
@@ -62,7 +79,9 @@ def view_document(args: argparse.Namespace) -> int:
     ocr = OCRService()
     docs = DocumentService(config.docs_dir, ocr)
     braille = BrailleService(config.braille_table, config.braille_cells)
-    hardware = StubHardwareAdapter()
+    
+    # Use configured hardware adapter (stepper, RPi, or stub)
+    hardware = _create_hardware_adapter(config)
 
     # Extract text chunks using config values
     text_chunks = docs.extract_text_chunks(

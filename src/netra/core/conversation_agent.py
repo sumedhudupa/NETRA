@@ -411,15 +411,33 @@ class ConversationAgent:
         self.braille.export_unicode_braille(patterns, self.braille_output_file)
 
     def _render_braille_text(self, text: str) -> None:
-        _, patterns = self.braille.text_to_patterns(text)
+        contracted, patterns = self.braille.text_to_patterns(text)
         unicode_braille = self.braille.patterns_to_unicode(patterns)
         preview = unicode_braille[:80].replace("\n", " ")
         self.logger.info("Braille unicode preview: %s", preview)
-        chunks = self.braille.chunk_patterns(patterns)
+
+        # Decide how many characters to display concurrently based on hardware
+        try:
+            capacity = max(1, int(self.hardware.display_capacity_chars()))
+        except Exception:
+            capacity = self.braille.cells
+
+        # Build character-aligned chunks so hardware can map chars->motor divisions
+        chunks = []
+        chars = list(contracted)
+        for i in range(0, len(patterns), capacity):
+            pchunk = patterns[i:i+capacity]
+            cchunk = chars[i:i+capacity]
+            # pad to capacity
+            if len(pchunk) < capacity:
+                pchunk = pchunk + [0] * (capacity - len(pchunk))
+                cchunk = cchunk + [" "] * (capacity - len(cchunk))
+            chunks.append((pchunk, cchunk))
+
         total = len(chunks)
-        self.logger.info("Rendering %d braille chunk(s)", total)
-        for idx, chunk in enumerate(chunks, start=1):
-            self.hardware.display_braille_cells(chunk)
+        self.logger.info("Rendering %d braille chunk(s) with capacity=%d", total, capacity)
+        for idx, (pattern_chunk, char_chunk) in enumerate(chunks, start=1):
+            self.hardware.display_braille_cells(pattern_chunk, char_chunk)
             if idx < total:
                 time.sleep(self.braille_display_delay)
 

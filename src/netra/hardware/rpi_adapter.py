@@ -122,7 +122,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             GPIO.output(self.status_led_pin, GPIO.LOW)
             self.logger.info("Status LED configured on GPIO %d", self.status_led_pin)
             
-            # Setup 8 servo motors: 2 per braille cell (left/right columns)
+            # Setup servos: N pins configured as PWM outputs
             for i, pin in enumerate(self.servo_pins):
                 GPIO.setup(pin, GPIO.OUT)
                 pwm = GPIO.PWM(pin, self.SERVO_FREQ)
@@ -284,12 +284,11 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             self.logger.warning("Scroll button wait error: %s", exc)
             time.sleep(1)
     
-    def display_braille_cells(self, dot_patterns: List[int]) -> None:
+    def display_braille_cells(self, dot_patterns: List[int], chars: List[str] | None = None) -> None:
         """
-        Display one 4-cell braille slide using 8 servo motors.
-        Each cell uses two motors:
-        - left column servo controls dots 1, 2, 3
-        - right column servo controls dots 4, 5, 6
+        Display a group of braille cells using servos. Each cell uses two servos
+        (left/right columns). `dot_patterns` is a list of patterns for visible
+        cells; if fewer than configured cells are provided, we pad with blanks.
         """
         if not RPI_AVAILABLE or not self._initialized:
             # Fallback: print pattern representation
@@ -301,9 +300,9 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             print(f"[BRAILLE] {' '.join(rendered)}")
             return
         
-        # Ensure we have exactly 4 patterns (pad with blanks if needed)
-        patterns = list(dot_patterns[:4])
-        while len(patterns) < 4:
+        # Normalize to configured number of cells
+        patterns = list(dot_patterns[:len(self.servo_pins)//2])
+        while len(patterns) < (len(self.servo_pins)//2):
             patterns.append(0)
         
         self.logger.info("Displaying braille patterns: %s", [bin(p) for p in patterns])
@@ -329,6 +328,12 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             rendered.append(f"Cell{idx}:[{','.join(dots) or 'blank'}]")
         self.logger.info("Braille cells updated: %s", " ".join(rendered))
     
+    def display_capacity_chars(self) -> int:
+        """Return how many braille cells this hardware can display concurrently.
+        Each cell uses two servos (left/right columns), so capacity = servo_pins // 2.
+        """
+        return len(self.servo_pins) // 2
+
     def _pattern_to_column_bits(self, pattern: int) -> tuple[str, str]:
         left_bits = "".join("1" if pattern & (1 << dot) else "0" for dot in range(3))
         right_bits = "".join("1" if pattern & (1 << dot) else "0" for dot in range(3, 6))

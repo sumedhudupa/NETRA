@@ -19,35 +19,53 @@ from netra.utils.logging_utils import configure_logging
 def _create_hardware_adapter(config):
     """
     Create appropriate hardware adapter based on config and platform.
-    
-    Modes:
-    - "auto": Detect platform automatically (RPi on ARM Linux, Stub otherwise)
-    - "rpi": Force Raspberry Pi adapter
-    - "stub": Force stub adapter (for development/testing)
+    Supports optional stepper adapter when `rpi_stepper_enabled` is set.
     """
     logger = logging.getLogger(__name__)
     mode = config.hardware_mode.lower()
-    
+
     # Auto-detect: Check if running on Raspberry Pi
     is_raspberry_pi = False
     if mode == "auto":
         try:
-            # Check for Raspberry Pi by looking at /proc/cpuinfo or platform
             if platform.machine().startswith('aarch64') or platform.machine().startswith('arm'):
-                # Additional check for Pi-specific files
                 if Path("/proc/device-tree/model").exists():
                     model = Path("/proc/device-tree/model").read_text()
                     is_raspberry_pi = "Raspberry Pi" in model
                     logger.info("Detected hardware: %s", model.strip())
         except Exception:
             pass
-    
+
     # Use RPi adapter if forced or auto-detected
     if mode == "rpi" or (mode == "auto" and is_raspberry_pi):
+        # Prefer stepper adapter if configured
+        try:
+            if getattr(config, "rpi_stepper_enabled", False) and config.rpi_stepper_motor_pins:
+                from netra.hardware.stepper_adapter import StepperHardwareAdapter
+                from netra.hardware.stub_adapter import StubHardwareAdapter
+                logger.info("Using Raspberry Pi Stepper hardware adapter with audio delegation")
+                
+                # Create stub adapter for audio delegation (no GPIO servo setup needed)
+                audio_adapter = StubHardwareAdapter(
+                    audio_device=config.rpi_audio_device,
+                    sample_rate=config.audio_sample_rate,
+                    audio_output_device=config.rpi_audio_output_device,
+                    bt_speaker_mac=config.rpi_bt_speaker_mac,
+                )
+                
+                return StepperHardwareAdapter(
+                    motor_pins=config.rpi_stepper_motor_pins,
+                    steps_per_rev=config.rpi_stepper_steps_per_revolution,
+                    step_delay_sec=config.rpi_stepper_step_delay_sec,
+                    audio_adapter=audio_adapter,
+                )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Stepper adapter init failed: %s", exc)
+
         try:
             from netra.hardware.rpi_adapter import RaspberryPiHardwareAdapter
-            logger.info("Using Raspberry Pi hardware adapter")
-            servo_pins = [int(pin.strip()) for pin in config.rpi_gpio_servo_pins.split(",") if pin.strip()]
+            logger.info("Using Raspberry Pi hardware adapter (servo PWM)")
+            servo_pins = [int(pin.strip()) for pin in str(config.rpi_gpio_servo_pins).split(",") if str(pin).strip()]
             return RaspberryPiHardwareAdapter(
                 audio_device=config.rpi_audio_device,
                 audio_output_device=config.rpi_audio_output_device,
@@ -61,7 +79,7 @@ def _create_hardware_adapter(config):
             )
         except ImportError as exc:
             logger.warning("RPi adapter import failed: %s, falling back to stub", exc)
-    
+
     # Fallback to stub adapter
     from netra.hardware.stub_adapter import StubHardwareAdapter
     logger.info("Using stub hardware adapter")

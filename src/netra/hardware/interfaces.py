@@ -12,7 +12,16 @@ class HardwareAdapter(ABC):
         pass
 
     @abstractmethod
-    def display_braille_cells(self, dot_patterns: List[int]) -> None:
+    def display_braille_cells(self, dot_patterns: List[int], chars: List[str] | None = None) -> None:
+        """Display a group of braille cells.
+        - `dot_patterns` is a list of integer dot bitmasks (one per visible cell)
+        - `chars` is an optional list of original characters corresponding to the patterns
+        """
+        pass
+
+    @abstractmethod
+    def display_capacity_chars(self) -> int:
+        """Return how many characters (braille cells) this hardware can display concurrently."""
         pass
 
     @abstractmethod
