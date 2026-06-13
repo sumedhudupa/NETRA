@@ -1,0 +1,1 @@
+make the conversation more interactive beofre and after ocr ad other features
