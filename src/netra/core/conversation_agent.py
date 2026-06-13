@@ -131,7 +131,10 @@ class ConversationAgent:
             raw = intent.value or ""
             if "to" in raw:
                 target = raw.split("to", 1)[1].strip() or target
-            self._llm_task(f"Translate this to {target}", self.state.current_doc_text)
+            self._llm_task(
+                f"Translate the Text to {target}. Output only the translated text",
+                self.state.current_doc_text,
+            )
             return
 
         if action == "take_note":
@@ -280,14 +283,13 @@ class ConversationAgent:
         self._say(f"Loaded {Path(doc.name).stem}. Say read this or summarize.")
 
     def _camera_capture_flow(self) -> None:
-        self._say("Camera mode active. Please align the document and I will capture the image now.")
         try:
             image_path = self.hardware.capture_image_path()
             if not image_path or not Path(image_path).exists():
                 self._say("I could not access the camera. Please check the hardware connection.")
                 return
 
-            self._say("Image captured. Analyzing text in live chunks, please wait.")
+            self.logger.info("Camera image captured: %s", image_path)
             chunks = self.document_service.extract_ocr_chunks_from_camera_image(
                 image_path,
                 lines_per_chunk=self.ocr_lines_per_chunk,
@@ -301,9 +303,6 @@ class ConversationAgent:
             self.state.current_doc_text = text
             self.state.current_doc_name = "camera_capture"
             self.state.current_doc_path = image_path
-            note_name = f"ocr_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            self.store.save_note(note_name, text)
-            self._say("Text extraction complete. I have saved it to your notes. Streaming it now.")
             self._render_text_stream(chunks)
         except Exception as exc:
             self.logger.error("Camera capture flow failed: %s", exc)
@@ -354,9 +353,19 @@ class ConversationAgent:
             return
 
         self._say("Processing your request, this may take a few seconds.")
-        prompt = f"{instruction}. Keep response concise and voice-friendly.\\n\\nText:\\n{source_text[:8000]}"
+        system_prompt = (
+            "You are an assistive reading assistant for a blind user. "
+            "Do not introduce yourself unless the user explicitly asks. "
+            "Base your response ONLY on the provided Text. "
+            "Do not add facts, websites, or details not present in the Text. "
+            "If the Text does not contain enough information to answer, say so clearly. "
+            "Keep the response concise and optimized for text-to-speech (<= 60 words). "
+            "Avoid bullet points and meta commentary. "
+            "If the user asks to translate, output ONLY the translated text."
+        )
+        prompt = f"{instruction}.\n\nText:\n{source_text[:12000]}"
         try:
-            result = self.llama.generate(prompt, timeout=90)
+            result = self.llama.generate(prompt, system=system_prompt, timeout=90, temperature=0.2, max_tokens=192)
         except Exception as exc:
             self.logger.error("LLM task failed: %s", exc)
             self._say("I encountered an error while trying to process the text.")
@@ -370,12 +379,14 @@ class ConversationAgent:
 
         self._say("Let me think.")
         system_prompt = (
-            "You are NETRA, a helpful, warm, and extremely concise assistant for blind users. "
-            "Your responses must be very brief (1-2 sentences) and optimized for text-to-speech. "
+            "You are a helpful, warm, extremely concise assistant for a blind user. "
+            "Do not introduce yourself unless asked. "
+            "Answer in 1 sentence when possible, maximum 2 short sentences. "
+            "No lists, no bullet points, no meta commentary. "
             "If the user says thank you, respond warmly and briefly."
         )
         try:
-            result = self.llama.generate(query, system=system_prompt, timeout=60)
+            result = self.llama.generate(query, system=system_prompt, timeout=60, max_tokens=96)
             self._say(result)
         except Exception as exc:
             self.logger.error("General LLM query failed: %s", exc)

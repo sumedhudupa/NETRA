@@ -1,4 +1,6 @@
 from pathlib import Path
+import os
+import inspect
 import logging
 import numpy as np
 import time
@@ -8,6 +10,11 @@ try:
     import whisper
 except Exception:  # pragma: no cover
     whisper = None
+
+try:
+    from faster_whisper import WhisperModel as FasterWhisperModel
+except Exception:  # pragma: no cover
+    FasterWhisperModel = None
 
 from netra.hardware.interfaces import HardwareAdapter
 
@@ -39,32 +46,74 @@ class STTService:
         stt_engine_command: str = "whisper",
         use_live_mic: bool = True,
         allow_typed_fallback: bool = False,
+        stt_offline: bool = True,
     ) -> None:
         self.logger = logging.getLogger(__name__)
         self.sample_rate = sample_rate
         self.wake_word = wake_word.lower()
         self.use_live_mic = use_live_mic
         self.allow_typed_fallback = allow_typed_fallback
+        self.stt_offline = bool(stt_offline)
         self.stt_engine = stt_engine.lower()
         self.stt_engine_wake_word = stt_engine_wake_word.lower()
         self.stt_engine_command = stt_engine_command.lower()
         
         # Whisper model
         self.whisper_model = None
-        if whisper is not None:
-            needs_whisper = (
-                self.stt_engine == "whisper"
-                or self.stt_engine_wake_word == "whisper"
-                or self.stt_engine_command == "whisper"
-            )
-            if needs_whisper:
-                try:
-                    self.whisper_model = whisper.load_model(whisper_model_name)
-                    self.logger.info("Whisper model loaded: %s", whisper_model_name)
-                except Exception as exc:
-                    self.logger.warning("Whisper model unavailable (%s): %s", whisper_model_name, exc)
-        else:
-            self.logger.info("Whisper library not installed; Whisper STT disabled")
+        self._whisper_backend = "none"
+        needs_whisper = (
+            self.stt_engine == "whisper"
+            or self.stt_engine_wake_word == "whisper"
+            or self.stt_engine_command == "whisper"
+        )
+        if needs_whisper:
+            try:
+                resolved_whisper_model = whisper_model_name
+                # Convenience: if user config says "base" and a local folder exists, prefer it.
+                local_fw_dir = Path("models") / f"faster-whisper-{whisper_model_name}"
+                if not Path(resolved_whisper_model).exists() and local_fw_dir.exists():
+                    resolved_whisper_model = str(local_fw_dir)
+
+                if self.stt_offline:
+                    # Prevent any accidental network access via HF Hub.
+                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+                    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
+                if FasterWhisperModel is not None:
+                    kwargs = {
+                        "device": "cpu",
+                        "compute_type": "int8",
+                    }
+                    # Newer faster-whisper supports local_files_only to avoid any downloads.
+                    try:
+                        params = inspect.signature(FasterWhisperModel).parameters
+                        if self.stt_offline and "local_files_only" in params:
+                            kwargs["local_files_only"] = True
+                    except Exception:  # pragma: no cover
+                        pass
+
+                    self.whisper_model = FasterWhisperModel(resolved_whisper_model, **kwargs)
+                    self._whisper_backend = "faster-whisper"
+                    self.logger.info(
+                        "Whisper model loaded (%s): %s", self._whisper_backend, resolved_whisper_model
+                    )
+                elif whisper is not None:
+                    if self.stt_offline and not Path(resolved_whisper_model).exists():
+                        raise RuntimeError(
+                            "Offline STT enabled but Whisper model is not a local path. "
+                            "Set whisper_model to a local .pt file path (openai-whisper) or "
+                            "a local faster-whisper directory."
+                        )
+                    # openai-whisper will download weights if given a model name and not cached.
+                    self.whisper_model = whisper.load_model(resolved_whisper_model)
+                    self._whisper_backend = "openai-whisper"
+                    self.logger.info(
+                        "Whisper model loaded (%s): %s", self._whisper_backend, resolved_whisper_model
+                    )
+                else:
+                    self.logger.info("Whisper libraries not installed; Whisper STT disabled")
+            except Exception as exc:
+                self.logger.warning("Whisper model unavailable (%s): %s", whisper_model_name, exc)
         
         # Vosk model
         self.vosk_model = None
@@ -102,8 +151,13 @@ class STTService:
         if self.whisper_model is None:
             self.logger.warning("Whisper model not available")
             return ""
-        result = self.whisper_model.transcribe(audio, language="en", fp16=False)
-        text = result.get("text", "").strip().lower()
+        if self._whisper_backend == "faster-whisper":
+            segments, _info = self.whisper_model.transcribe(audio, language="en")
+            text = " ".join(segment.text.strip() for segment in segments if getattr(segment, "text", "").strip())
+            text = text.strip().lower()
+        else:
+            result = self.whisper_model.transcribe(audio, language="en", fp16=False)
+            text = result.get("text", "").strip().lower()
         self.logger.info("Whisper STT transcript: %s", text)
         return text
     

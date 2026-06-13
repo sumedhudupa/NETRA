@@ -6,7 +6,7 @@ from typing import List, Optional
 
 @dataclass
 class NetraConfig:
-    llama_model_path: str = "models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf"
+    llama_model_path: str = "models/Phi-3-mini-4k-instruct-q4.gguf"
     llama_threads: int = 4
     llama_context_size: int = 2048
     llama_temperature: float = 0.7
@@ -14,7 +14,10 @@ class NetraConfig:
     docs_dir: str = "docs"
     braille_table: str = "en-ueb-g2.ctb"
     braille_cells: int = 4
-    whisper_model: str = "tiny"
+    whisper_model: str = "base"
+    # When true, STT will not download models from the internet.
+    # Provide local model paths (or ensure models are already cached) to use Whisper.
+    stt_offline: bool = True
     vosk_model: str = "models/vosk-model-small-en-us-0.15"
     stt_engine: str = "vosk"
     stt_engine_wake_word: str = "vosk"

@@ -164,37 +164,30 @@ print("[4/7] Testing Camera...")
 try:
     import subprocess
     
-    # Try libcamera-still first (Pi Camera)
-    print("  - Trying Pi Camera (libcamera)...")
-    result = subprocess.run(
-        ['libcamera-still', '-o', '/tmp/netra_camera_test.jpg', '-t', '1000', '-n'],
-        capture_output=True,
-        timeout=15
-    )
-    
-    if result.returncode == 0 and Path('/tmp/netra_camera_test.jpg').exists():
-        print("  ✓ Pi Camera test passed")
-        print("  - Image saved to /tmp/netra_camera_test.jpg")
-        results['Camera'] = True
-    else:
-        # Try fswebcam (USB webcam)
-        print("  - Pi Camera failed, trying USB webcam (fswebcam)...")
-        result = subprocess.run(
-            ['fswebcam', '-r', '640x480', '--no-banner', '/tmp/netra_camera_test.jpg'],
-            capture_output=True,
-            timeout=15
-        )
-        
+    camera_commands = [
+        ('rpicam-still', ['rpicam-still', '-o', '/tmp/netra_camera_test.jpg', '-t', '1000', '-n']),
+        ('libcamera-still', ['libcamera-still', '-o', '/tmp/netra_camera_test.jpg', '-t', '1000', '-n']),
+        ('fswebcam', ['fswebcam', '-r', '640x480', '--no-banner', '/tmp/netra_camera_test.jpg']),
+    ]
+
+    for command_name, command in camera_commands:
+        print(f"  - Trying {command_name}...")
+        result = subprocess.run(command, capture_output=True, timeout=15)
         if result.returncode == 0 and Path('/tmp/netra_camera_test.jpg').exists():
-            print("  ✓ USB Webcam test passed")
+            print(f"  ✓ Camera test passed with {command_name}")
             print("  - Image saved to /tmp/netra_camera_test.jpg")
             results['Camera'] = True
-        else:
-            print("  ✗ No camera detected")
-            results['Camera'] = False
+            break
+        if result.returncode != 0:
+            stderr = result.stderr.decode() if isinstance(result.stderr, bytes) else result.stderr
+            if stderr:
+                print(f"  - {command_name} failed: {stderr.strip()}")
+    else:
+        print("  ✗ No camera detected")
+        results['Camera'] = False
             
 except FileNotFoundError:
-    print("  ✗ Camera tools not installed (libcamera-still, fswebcam)")
+    print("  ✗ Camera tools not installed (rpicam-still, libcamera-still, fswebcam)")
     results['Camera'] = False
 except Exception as e:
     print(f"  ✗ Camera test failed: {e}")

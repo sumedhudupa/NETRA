@@ -25,6 +25,10 @@ class IntentParser:
             return CommandIntent("list_docs")
         if "read this" in text or text == "read" or "read document" in text or "read it" in text:
             return CommandIntent("read_current")
+        # Common combined command: user wants the current text translated (usually to English)
+        # while also implying they want it read aloud.
+        if "read and translate" in text or "translate and read" in text:
+            return CommandIntent("translate", "to english")
         if "camera" in text or "capture" in text:
             return CommandIntent("camera_ocr")
         if "take a note" in text or text.startswith("note this"):
@@ -133,20 +137,36 @@ class IntentParser:
 
         docs_text = ", ".join(doc_names[:30]) if doc_names else "none"
         prompt = (
-            "You are NETRA, an intelligent voice assistant for the blind. "
-            "Your goal is to map user natural language to specific system actions. "
-            "Actions: open_by_name, read_current, camera_ocr, summarize, explain, quiz, translate, list_docs, general_query. "
+            "You are NETRA, an intelligent voice assistant for the blind.\n"
+            "Map the user's text to exactly ONE action.\n"
+            "\nAllowed actions:\n"
+            "- open_by_name (value: document name)\n"
+            "- open_by_index (value: 1-based index as string)\n"
+            "- list_docs (value: empty)\n"
+            "- read_current (value: empty)\n"
+            "- camera_ocr (value: empty)\n"
+            "- summarize | explain | quiz (value: empty)\n"
+            "- translate (value: target language, e.g. 'spanish')\n"
+            "- define (value: term or question)\n"
+            "- take_note (value: note content)\n"
+            "- save_note | read_last_note (value: empty)\n"
+            "- delete_note (value: note name)\n"
+            "- bookmark | go_bookmark | close_document | repeat | start_over | time | battery (value: empty)\n"
+            "- general_query (value: user text)\n"
+            "\nRules:\n"
+            "1. Output MUST be strict JSON with keys action and value ONLY. No markdown.\n"
+            "2. If unsure, use general_query.\n"
+            "3. 'open file 2' => open_by_index with value '2'.\n"
+            "4. 'translate to spanish' => translate with value 'spanish'.\n"
+            "\nExamples:\n"
+            "User: open file 1\nOutput: {\"action\":\"open_by_index\",\"value\":\"1\"}\n"
+            "User: read this\nOutput: {\"action\":\"read_current\",\"value\":\"\"}\n"
+            "User: summarize\nOutput: {\"action\":\"summarize\",\"value\":\"\"}\n"
+            "User: translate to spanish\nOutput: {\"action\":\"translate\",\"value\":\"spanish\"}\n"
             "\n"
-            "Rules:\n"
-            "1. If user mentions 'braille', 'convert', 'translate', map to translate action.\n"
-            "2. If user mentions 'read', 'listen', 'hear', map to read_current action for open doc.\n"
-            "3. If user says 'tell me about' or 'what is in', map to summarize if doc is open, camera_ocr if not.\n"
-            "4. If doc is already open, assume actions like 'braille' or 'read' refer to that doc.\n"
-            "5. Social cues map to general_query.\n"
-            "\n"
-            "Return ONLY strict JSON: {\"action\":\"...\",\"value\":\"...\"}\n"
             f"Available documents: {docs_text}\n"
-            f"User says: \"{command}\""
+            f"User: {command}\n"
+            "Output:"
         )
         try:
             raw = self.llama.generate(prompt, timeout=30).strip()

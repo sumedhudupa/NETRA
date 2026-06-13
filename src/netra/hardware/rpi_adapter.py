@@ -199,6 +199,32 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
                 return output_path
             except Exception as exc:
                 self.logger.warning("Pi Camera capture failed: %s", exc)
+
+        # Prefer the Raspberry Pi CLI camera stack for CSI cameras on newer OS releases.
+        for camera_command in ("rpicam-still", "libcamera-still"):
+            try:
+                command = [
+                    camera_command,
+                    "-o", output_path,
+                    "--width", str(self.usb_camera_width),
+                    "--height", str(self.usb_camera_height),
+                    "-t", "1000",
+                    "-n",  # No preview
+                ]
+                result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+                if result.returncode == 0 and Path(output_path).exists():
+                    self.logger.info("Image captured with %s: %s", camera_command, output_path)
+                    return output_path
+                self.logger.debug(
+                    "%s failed with code %s: %s",
+                    camera_command,
+                    result.returncode,
+                    (result.stderr or result.stdout or "").strip(),
+                )
+            except FileNotFoundError:
+                self.logger.debug("%s not installed", camera_command)
+            except Exception as exc:
+                self.logger.error("%s capture failed: %s", camera_command, exc)
         
         # Fallback to fswebcam for USB webcam
         try:
@@ -224,29 +250,13 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
                     output_path,
                 )
                 return output_path
+            self.logger.debug(
+                "fswebcam failed with code %s: %s",
+                result.returncode,
+                (result.stderr or result.stdout or "").strip(),
+            )
         except Exception as exc:
             self.logger.error("USB webcam capture failed: %s", exc)
-        
-        # Fallback to libcamera-still (Raspberry Pi OS Bullseye+)
-        try:
-            result = subprocess.run(
-                [
-                    "libcamera-still",
-                    "-o", output_path,
-                    "--width", "1920",
-                    "--height", "1080",
-                    "-t", "1000",
-                    "-n"  # No preview
-                ],
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
-            if result.returncode == 0 and Path(output_path).exists():
-                self.logger.info("Image captured with libcamera-still: %s", output_path)
-                return output_path
-        except Exception as exc:
-            self.logger.error("libcamera-still capture failed: %s", exc)
         
         self.logger.error("All camera capture methods failed")
         return ""

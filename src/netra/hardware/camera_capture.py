@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import platform
 import time
 from pathlib import Path
 
@@ -15,6 +16,8 @@ def _open_camera(device_index: int):
         return None
 
     backends = []
+    if platform.system().lower() == "linux" and hasattr(cv2, "CAP_V4L2"):
+        backends.append(cv2.CAP_V4L2)
     if hasattr(cv2, "CAP_DSHOW"):
         backends.append(cv2.CAP_DSHOW)
     if hasattr(cv2, "CAP_MSMF"):
@@ -65,7 +68,8 @@ def capture_frame_with_opencv(
         frame = None
         best_frame = None
         best_sharpness = -1.0
-        for _ in range(max(1, warmup_frames)):
+        read_attempts = max(1, warmup_frames)
+        for _ in range(read_attempts):
             ok, grabbed = camera.read()
             if ok:
                 frame = grabbed
@@ -74,7 +78,17 @@ def capture_frame_with_opencv(
                 if sharpness > best_sharpness:
                     best_sharpness = sharpness
                     best_frame = grabbed.copy()
-            time.sleep(0.05)
+                time.sleep(0.05)
+            else:
+                time.sleep(0.1)
+
+        if frame is None:
+            for _ in range(5):
+                ok, grabbed = camera.read()
+                if ok:
+                    frame = grabbed
+                    break
+                time.sleep(0.1)
 
         if best_frame is not None:
             frame = best_frame

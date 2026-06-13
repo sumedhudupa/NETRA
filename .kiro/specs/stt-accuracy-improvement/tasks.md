@@ -1,0 +1,139 @@
+# Implementation Plan
+
+- [x] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - Whisper Library Unavailable and Poor Vosk Accuracy
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate (1) Whisper library is missing, and (2) Vosk-small produces poor transcription accuracy
+  - **Scoped PBT Approach**: Test concrete failing cases - Whisper import failure and Vosk WER on sample commands
+  - Test implementation details from Bug Condition in design:
+    - Verify `openai-whisper` is NOT in requirements.txt
+    - Verify `import whisper` raises ModuleNotFoundError
+    - Verify STTService logs "Whisper library not installed" when initialized with whisper engine
+    - Create test dataset of 10-20 common voice commands (WAV files at 16kHz)
+    - Run transcription using Vosk-small model on test dataset
+    - Calculate Word Error Rate (WER) by comparing transcripts to ground truth
+    - Document specific counterexamples (e.g., "read and translate" → "read and trans late")
+  - The test assertions should match the Expected Behavior Properties from design:
+    - After fix: Whisper library should be importable
+    - After fix: WER should be ≤8% (currently expect ~15-20%)
+  - Run test on UNFIXED code
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found to understand root cause
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4_
+
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Wake Word Detection and Audio Processing
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code for non-buggy inputs:
+    - Wake word detection using Vosk engine
+    - Typed input fallback when STT fails
+    - Audio processing at 16kHz sample rate
+    - Dual engine architecture (separate wake word and command engines)
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements:
+    - Property: For all wake word detection events, Vosk engine is used (not Whisper)
+    - Property: For all typed input scenarios, fallback mechanism works correctly
+    - Property: For all audio inputs, sample rate is 16kHz
+    - Property: For all STT configurations, dual engine architecture is supported
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
+
+- [ ] 3. Fix for STT accuracy improvement
+
+  - [x] 3.1 Add Whisper library to dependencies
+    - Add `openai-whisper==20231117` to requirements.txt
+    - This is the CRITICAL fix - enables Whisper STT functionality
+    - Version 20231117 is stable and tested on Raspberry Pi 4B
+    - _Bug_Condition: whisperLibraryNotInstalled() from design_
+    - _Expected_Behavior: Whisper library successfully imports and loads_
+    - _Preservation: Existing Vosk dependencies remain unchanged_
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [ ] 3.2 Add faster-whisper for performance optimization (OPTIONAL)
+    - Add `faster-whisper>=1.0.0` to requirements.txt
+    - Provides 4x speed improvement (RTF 0.23-0.41 vs 0.92-1.64)
+    - Uses CTranslate2 for optimized CPU inference
+    - Maintains identical accuracy to openai-whisper
+    - This is HIGHLY RECOMMENDED but optional
+    - _Expected_Behavior: Improved performance with same accuracy_
+    - _Preservation: Falls back to openai-whisper if faster-whisper unavailable_
+    - _Requirements: 2.3_
+
+  - [x] 3.3 Update config.json for Whisper command recognition
+    - Change `"stt_engine_command": "vosk"` to `"stt_engine_command": "whisper"`
+    - This switches command recognition from Vosk-small to Whisper
+    - Wake word detection remains on Vosk (controlled by stt_engine_wake_word)
+    - _Bug_Condition: config.stt_engine_command == "vosk" AND voskModelIsSmall() from design_
+    - _Expected_Behavior: Command recognition uses Whisper Base for ~7-8% WER_
+    - _Preservation: Wake word detection continues using Vosk_
+    - _Requirements: 2.1, 2.2, 2.4, 3.1, 3.2_
+
+  - [x] 3.4 Upgrade Whisper model to Base
+    - Change `"whisper_model": "tiny"` to `"whisper_model": "base"`
+    - Upgrades from 39M parameters (~10% WER) to 74M parameters (~7-8% WER)
+    - Base model proven on RPi 4B: RTF 0.23-0.41, ~500MB RAM, no thermal issues
+    - Optimal balance of accuracy and performance for RPi 4B hardware
+    - _Expected_Behavior: Transcription accuracy ~7-8% WER_
+    - _Preservation: System operates within RPi 4B resource constraints_
+    - _Requirements: 2.1, 2.3, 3.5_
+
+  - [ ] 3.5 Add faster-whisper support to STTService (OPTIONAL)
+    - Modify `src/netra/services/stt_service.py` __init__ method
+    - Try importing `faster_whisper.WhisperModel` before falling back to `whisper.load_model`
+    - Use WhisperModel from faster-whisper with same API
+    - This is optional - config changes alone fix the accuracy bug
+    - Provides significant performance improvement if faster-whisper installed
+    - _Expected_Behavior: 4x faster inference with same accuracy_
+    - _Preservation: Falls back to openai-whisper if faster-whisper unavailable_
+    - _Requirements: 2.3_
+
+  - [x] 3.6 Update README.md documentation
+    - Add section explaining Whisper Base recommendation
+    - Document WER comparison: Vosk-small (~15-20%) vs Whisper Base (~7-8%)
+    - Document performance metrics: RTF 0.23-0.41, ~500MB RAM, no thermal issues
+    - Clarify dual-engine architecture: Vosk for wake word, Whisper for commands
+    - Update configuration reference table to show Whisper Base as default
+    - Fix inconsistency between README table and actual config.json
+    - _Preservation: Documentation reflects actual system behavior_
+    - _Requirements: 2.1, 2.3_
+
+  - [ ] 3.7 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Whisper Library Available and Accurate Transcription
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1
+    - Verify Whisper library is importable
+    - Verify STTService successfully loads Whisper Base model
+    - Verify WER on test dataset is ≤8%
+    - Verify specific commands transcribe correctly (e.g., "read and translate")
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [ ] 3.8 Verify preservation tests still pass
+    - **Property 2: Preservation** - Wake Word Detection and Audio Processing
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2
+    - Verify wake word detection still uses Vosk engine
+    - Verify typed input fallback still works
+    - Verify audio processing still uses 16kHz sample rate
+    - Verify dual engine architecture still supported
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all tests still pass after fix (no regressions)
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
+
+- [ ] 4. Checkpoint - Ensure all tests pass
+  - Run complete test suite (exploration + preservation + unit tests)
+  - Verify all tests pass on fixed code
+  - Verify WER meets target (≤8%) on test dataset
+  - Verify performance metrics on Raspberry Pi 4B (if available):
+    - RTF within expected range (0.23-0.41 with faster-whisper, 0.92-1.64 with openai-whisper)
+    - RAM usage ~500MB for Whisper Base model
+    - No thermal throttling or memory exhaustion
+  - Verify intent parser successfully recognizes commands from improved transcripts
+  - Ask the user if questions arise

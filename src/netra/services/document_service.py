@@ -45,14 +45,14 @@ class DocumentService:
         if suffix == ".pdf":
             return self._extract_pdf_text(path)
         if suffix in {".png", ".jpg", ".jpeg", ".bmp", ".tiff"}:
-            image = Image.open(path)
-            text, _ = self.ocr_service.extract_text_with_confidence(image)
-            return text
+            with Image.open(path) as image:
+                text, _ = self.ocr_service.extract_text_with_confidence(image)
+                return text
         return ""
 
     def extract_ocr_from_camera_image(self, image_path: str, min_confidence: float = 0.0) -> Optional[str]:
-        image = Image.open(image_path)
-        text, confidence = self.ocr_service.extract_text_with_confidence(image)
+        with Image.open(image_path) as image:
+            text, confidence = self.ocr_service.extract_text_with_confidence(image)
         if confidence < min_confidence:
             return None
         return text
@@ -87,15 +87,15 @@ class DocumentService:
         if suffix == ".pdf":
             return self._extract_pdf_text_chunks(path, pdf_pages_per_chunk=pdf_pages_per_chunk)
         if suffix in {".png", ".jpg", ".jpeg", ".bmp", ".tiff"}:
-            image = Image.open(path)
-            return [
-                text
-                for text, _ in self.ocr_service.extract_text_chunks_with_confidence(
-                    image,
-                    lines_per_chunk=ocr_lines_per_chunk,
-                )
-                if text.strip()
-            ]
+            with Image.open(path) as image:
+                return [
+                    text
+                    for text, _ in self.ocr_service.extract_text_chunks_with_confidence(
+                        image,
+                        lines_per_chunk=ocr_lines_per_chunk,
+                    )
+                    if text.strip()
+                ]
         return []
 
     def _extract_pdf_text(self, path: str) -> str:

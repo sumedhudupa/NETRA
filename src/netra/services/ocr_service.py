@@ -41,21 +41,51 @@ class OCRService:
         return entries
 
     def preprocess(self, image: Image.Image) -> Image.Image:
+        """Pi-friendly OCR preprocessing: contrast, denoise, deskew, threshold."""
         if cv2 is None:
             return image.convert("L")
 
-        img_np = np.array(image)
-        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-        denoised = cv2.fastNlMeansDenoising(gray)
-        thresh = cv2.adaptiveThreshold(
-            denoised,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            31,
-            11,
+        rgb = np.array(image.convert("RGB"))
+        gray = cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(gray)
+        denoised = cv2.medianBlur(clahe, 3)
+        deskewed = self._deskew(denoised)
+
+        otsu = cv2.threshold(deskewed, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+        return Image.fromarray(otsu)
+
+    def _deskew(self, image: np.ndarray) -> np.ndarray:
+        edges = cv2.Canny(image, 50, 150, apertureSize=3)
+        lines = cv2.HoughLines(edges, 1, np.pi / 180, threshold=100)
+
+        if lines is None:
+            return image
+
+        angles = []
+        for line in lines:
+            rho, theta = line[0]
+            angle = np.degrees(theta) - 90
+            if -45 < angle < 45:
+                angles.append(angle)
+
+        if not angles:
+            return image
+
+        median_angle = float(np.median(angles))
+        if abs(median_angle) < 0.5:
+            return image
+
+        h, w = image.shape[:2]
+        center = (w // 2, h // 2)
+        matrix = cv2.getRotationMatrix2D(center, median_angle, 1.0)
+        return cv2.warpAffine(
+            image,
+            matrix,
+            (w, h),
+            flags=cv2.INTER_CUBIC,
+            borderMode=cv2.BORDER_REPLICATE,
         )
-        return Image.fromarray(thresh)
 
     def extract_text_with_confidence(self, image: Image.Image) -> Tuple[str, float]:
         entries = self._extract_word_entries(image)

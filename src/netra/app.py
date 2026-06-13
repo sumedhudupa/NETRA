@@ -123,6 +123,7 @@ def run() -> None:
         stt_engine_command=config.stt_engine_command,
         use_live_mic=config.stt_use_live_mic,
         allow_typed_fallback=config.stt_allow_typed_fallback,
+        stt_offline=getattr(config, "stt_offline", True),
     )
     store = StoreService(str(root / config.db_path))
 

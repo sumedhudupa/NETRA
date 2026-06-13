@@ -12,7 +12,7 @@ NETRA is a low-cost, fully standalone refreshable braille reading assistant for 
 - **Camera input** — capture images of printed text and OCR them (Tesseract)
 - **Braille output** — UEB Grade 2 translation via liblouis, displayed as 4-cell dot patterns
 - **TTS output** — simultaneous audio output via Piper TTS (`en_US-lessac-medium`)
-- **LLM integration** — llama.cpp with TinyLlama-1.1B for document summarization and natural language commands
+- **LLM integration** — llama.cpp with Phi-3-mini for grounded summarization + natural language commands
 - **Dual STT engines** — Vosk (fast, for wake word detection) + Whisper (accurate, for command recognition), fully configurable
 - **4-cell scroll** — braille text displayed in chunks of 4 cells, advanced by button press
 
@@ -26,7 +26,7 @@ Input Layer
 └── Camera capture (Tesseract) → raw text
           ↓
 Processing Core
-├── LLM (llama.cpp + TinyLlama-1.1B)   → summarization / natural language parsing
+├── LLM (llama.cpp + Phi-3-mini)       → summarization / natural language parsing
 ├── liblouis (UEB G2)          → braille dot patterns
 └── Piper TTS                  → audio synthesis
           ↓
@@ -45,9 +45,9 @@ Output Layer
 | OCR                 | Tesseract + pytesseract           | 5.x / 0.3.13 |
 | Braille translation | liblouis + python3-louis          | 3.29.0       |
 | TTS                 | piper-tts (`lessac-medium`)       | 1.4.1        |
-| STT (accuracy)      | openai-whisper (tiny/base)        | 20250625     |
+| STT (accuracy)      | openai-whisper (base)             | 20231117     |
 | STT (speed)         | Vosk                              | 0.3.45       |
-| LLM                 | llama.cpp + TinyLlama-1.1B-Q4_K_M | 0.2.90       |
+| LLM                 | llama.cpp + Phi-3-mini (Q4)       | 0.2.90       |
 | Runtime             | Python 3.12                       | —            |
 | Target hardware     | Raspberry Pi 4B (8GB) / RPi 5     | —            |
 
@@ -64,7 +64,7 @@ netra/
 ├── src/netra/core/           # Conversation agent + command parser
 ├── src/netra/services/       # OCR/PDF/Braille/STT/TTS/Llama/Store services
 ├── src/netra/hardware/       # Hardware interface + adapters
-├── models/                   # Model files (TinyLlama GGUF, Vosk, Piper)
+├── models/                   # Model files (GGUF LLM, Vosk, Piper)
 ├── Dockerfile
 └── README.md
 ```
@@ -80,23 +80,23 @@ netra/
 
 ### 2. LLM Model Setup
 
-Download the recommended model for Raspberry Pi 4B:
+Download the recommended grounded model for Raspberry Pi 4B:
 
-**TinyLlama-1.1B-Chat-v1.0 (Q4_K_M quantization)**
+**Phi-3-mini-4k-instruct (Q4 quantization)**
 
 ```bash
 # Create models directory
 mkdir -p models
 
-# Download the model (approximately 650MB)
+# Download the model (approximately ~2.2GB)
 cd models
-wget https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+wget https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/Phi-3-mini-4k-instruct-q4.gguf
 cd ..
 ```
 
-**Alternative models (if you need better quality):**
+**Alternative models (if you need different speed/quality):**
 
-- **Phi-2 Q4_K_M** (2.7B, ~1.6GB): Better quality, slower inference (~1.5 tokens/sec on RPi 4B)
+- **Qwen 2.5 1.5B Instruct (Q4_K_M)**: smaller + faster, but less grounded than Phi-3-mini
 
 > The model runs directly within your Python application - no separate server needed!
 
@@ -131,7 +131,7 @@ pip install -r requirements.txt
 Place your downloaded GGUF model in the `models/` directory:
 
 ```bash
-models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
+models/Phi-3-mini-4k-instruct-q4.gguf
 ```
 
 ### Step 4 — Configure and run
@@ -189,15 +189,16 @@ Edit `config.json` to customize settings:
 
 ```json
 {
-  "llama_model_path": "models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+  "llama_model_path": "models/Phi-3-mini-4k-instruct-q4.gguf",
   "llama_threads": 4,
-  "llama_context_size": 2048,
+  "llama_context_size": 4096,
   "llama_temperature": 0.7,
   "piper_model": "models/en_US-lessac-medium.onnx",
   "docs_dir": "docs",
   "braille_table": "en-ueb-g2.ctb",
   "braille_cells": 4,
-  "whisper_model": "tiny",
+  "whisper_model": "base",
+  "stt_offline": true,
   "vosk_model": "models/vosk-model-small-en-us-0.15",
   "stt_engine": "vosk",
   "stt_engine_wake_word": "vosk",
@@ -211,7 +212,7 @@ Edit `config.json` to customize settings:
 **Key settings:**
 
 - `llama_threads`: Set to 4 for RPi 4B (use all cores)
-- `llama_context_size`: 2048 tokens is optimal for TinyLlama
+- `llama_context_size`: 4096 tokens is recommended for Phi-3-mini
 - `llama_temperature`: 0.7 for balanced creativity/consistency
 
 ---
@@ -298,15 +299,16 @@ All hardware stubs are in the `HARDWARE ABSTRACTION LAYER` section of `netra.py`
 
 | Key                    | Default                    | Description                                                       |
 | ---------------------- | -------------------------- | ----------------------------------------------------------------- |
-| `llama_model_path`     | `models/tinyllama-...gguf` | Path to GGUF model file for llama.cpp                             |
+| `llama_model_path`     | `models/Phi-3-mini-...gguf` | Path to GGUF model file for llama.cpp                            |
 | `llama_threads`        | `4`                        | Number of CPU threads (4 for RPi 4B quad-core)                    |
-| `llama_context_size`   | `2048`                     | Maximum context window in tokens                                  |
+| `llama_context_size`   | `4096`                     | Maximum context window in tokens                                  |
 | `llama_temperature`    | `0.7`                      | Sampling temperature (0.1=focused, 1.0=creative)                  |
 | `piper_model`          | `models/en_US-lessac-...`  | Path to Piper `.onnx` model file                                  |
 | `docs_dir`             | `docs`                     | Directory scanned for PDF and image files                         |
 | `braille_table`        | `en-ueb-g2.ctb`            | liblouis translation table. Use `en-ueb-g1.ctb` for Grade 1       |
 | `braille_cells`        | `4`                        | Number of physical braille cells on the display                   |
-| `whisper_model`        | `tiny`                     | Whisper model size (`tiny`, `base`, `small`)                      |
+| `whisper_model`        | `base`                     | Whisper model name (`tiny`, `base`, `small`) or local model path   |
+| `stt_offline`          | `true`                     | If true, prevents STT from downloading models (offline-only)      |
 | `vosk_model`           | `models/vosk-model-...`    | Path to Vosk model directory                                      |
 | `stt_engine`           | `vosk`                     | Default STT engine (`vosk` or `whisper`)                          |
 | `stt_engine_wake_word` | `vosk`                     | Engine for wake word detection (Vosk recommended for speed)       |
@@ -320,7 +322,7 @@ All hardware stubs are in the `HARDWARE ABSTRACTION LAYER` section of `netra.py`
 
 - **No real hardware connected yet** — all I/O via keyboard stubs
 - **Emulated performance is not representative** — ARM64 under QEMU is ~5-10x slower than real RPi 4B
-- **LLM inference on RPi 4B** — TinyLlama provides good quality for voice assistant tasks; upgrade to Phi-2 if you need better reasoning
+- **LLM inference on RPi 4B** — Phi-3-mini is heavier than TinyLlama; expect slower but more grounded responses on CPU-only Raspberry Pi
 - **No Porcupine wake word** — using Whisper for wake detection (less efficient than a dedicated wake word engine); Porcupine integration planned once AccessKey is available
 - **Audio playback stubbed** — WAV files are generated correctly but not played inside the container (no audio device)
 - **Single flat directory** — no nested folder navigation supported by design

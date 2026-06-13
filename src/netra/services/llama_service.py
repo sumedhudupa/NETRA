@@ -16,10 +16,14 @@ class LlamaCppService:
         self.n_ctx = n_ctx
         self.temperature = temperature
         self.llm = None
-        self._load_model()
+        self._model_load_attempted = False
 
     def _load_model(self) -> None:
         """Load the GGUF model file into memory."""
+        if self._model_load_attempted and self.llm is None:
+            return
+        self._model_load_attempted = True
+
         if not Path(self.model_path).exists():
             self.logger.error("Model file not found at %s", self.model_path)
             return
@@ -43,9 +47,18 @@ class LlamaCppService:
 
     def is_available(self) -> bool:
         """Check if the model is loaded and ready for inference."""
+        if self.llm is None and not self._model_load_attempted:
+            self._load_model()
         return self.llm is not None
 
-    def generate(self, prompt: str, system: Optional[str] = None, timeout: int = 60) -> str:
+    def generate(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        timeout: int = 60,
+        temperature: Optional[float] = None,
+        max_tokens: int = 512,
+    ) -> str:
         """
         Generate text completion from prompt.
         
@@ -68,14 +81,15 @@ class LlamaCppService:
                 full_prompt = f"System: {system}\n\nUser: {prompt}\n\nAssistant:"
             
             # Generate response
+            resolved_temperature = self.temperature if temperature is None else float(temperature)
             response = self.llm(
                 full_prompt,
-                max_tokens=512,  # Reasonable for voice assistant responses
-                temperature=self.temperature,
+                max_tokens=max_tokens,  # Reasonable for voice assistant responses
+                temperature=resolved_temperature,
                 top_p=0.95,
                 top_k=40,
                 repeat_penalty=1.1,
-                stop=["User:", "System:", "\n\n"],  # Stop tokens
+                stop=["User:", "System:"],  # Stop tokens
                 echo=False
             )
             

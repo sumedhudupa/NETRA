@@ -1,0 +1,139 @@
+# Implementation Plan
+
+- [ ] 1. Write bug condition exploration test
+  - **Property 1: Bug Condition** - TinyLlama Hallucination on Document Processing
+  - **CRITICAL**: This test MUST FAIL on unfixed code - failure confirms the bug exists
+  - **DO NOT attempt to fix the test or the code when it fails**
+  - **NOTE**: This test encodes the expected behavior - it will validate the fix when it passes after implementation
+  - **GOAL**: Surface counterexamples that demonstrate TinyLlama hallucinates when processing document text
+  - **Scoped PBT Approach**: Test with known PDF documents containing specific content (physics, biology, math) and verify that TinyLlama generates hallucinated content unrelated to the source
+  - Test implementation details from Bug Condition in design:
+    - Input: Document processing request where action IN ['summarize', 'translate', 'explain', 'quiz', 'define']
+    - Input: source_text is NOT NULL and length > 0
+    - Expected Failure: TinyLlama generates hallucinated content (fictional website names, unrelated topics, fabricated summaries)
+  - The test assertions should match the Expected Behavior Properties from design:
+    - Assert that LLM output is grounded in source text (contains key terms from source)
+    - Assert that LLM output does NOT contain hallucinated content (fictional websites, unrelated topics)
+    - Assert that LLM output follows instruction (e.g., summary is concise, translation is in target language)
+  - Run test on UNFIXED code (TinyLlama)
+  - **EXPECTED OUTCOME**: Test FAILS (this is correct - it proves the bug exists)
+  - Document counterexamples found to understand root cause:
+    - Example 1: Physics PDF summarization generates fictional website names
+    - Example 2: Biology PDF translation generates unrelated braille content
+    - Example 3: Math PDF explanation generates fabricated explanations
+  - Mark task complete when test is written, run, and failure is documented
+  - _Requirements: 1.1, 1.2, 1.3, 1.4_
+
+- [ ] 2. Write preservation property tests (BEFORE implementing fix)
+  - **Property 2: Preservation** - Non-LLM Functionality Unchanged
+  - **IMPORTANT**: Follow observation-first methodology
+  - Observe behavior on UNFIXED code (TinyLlama) for non-buggy inputs:
+    - Document extraction with PyMuPDF produces correct text
+    - Direct reading via "read this" command works without LLM processing
+    - Intent parsing maps user commands to correct actions
+    - OCR with Tesseract extracts text correctly from images
+    - Braille conversion with liblouis produces correct dot patterns
+    - TTS with Piper generates correct audio output
+    - File management commands (open, list, close, bookmark) work correctly
+    - Note-taking commands (take note, save note, read last note, delete note) work correctly
+  - Write property-based tests capturing observed behavior patterns from Preservation Requirements:
+    - Property: For all PDF documents, PyMuPDF extraction produces identical text before and after fix
+    - Property: For all "read this" commands, chunked streaming produces identical output before and after fix
+    - Property: For all user commands, intent parsing produces identical action mappings before and after fix (or improves)
+    - Property: For all camera-captured images, OCR produces identical text before and after fix
+    - Property: For all text inputs, braille conversion produces identical dot patterns before and after fix
+    - Property: For all text inputs, TTS produces identical audio output before and after fix
+    - Property: For all file operations, behavior is identical before and after fix
+    - Property: For all note operations, behavior is identical before and after fix
+  - Property-based testing generates many test cases for stronger guarantees
+  - Run tests on UNFIXED code (TinyLlama)
+  - **EXPECTED OUTCOME**: Tests PASS (this confirms baseline behavior to preserve)
+  - Mark task complete when tests are written, run, and passing on unfixed code
+  - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9_
+
+- [ ] 3. Fix for LLM hallucination by replacing TinyLlama with Phi-3-mini
+
+  - [ ] 3.1 Download Phi-3-mini-4k-instruct model
+    - Download Phi-3-mini-4k-instruct-q4.gguf (Q4_K_M quantization, ~2.2GB)
+    - Use wget or Hugging Face CLI to download from microsoft/Phi-3-mini-4k-instruct-gguf
+    - Place model file in `models/` directory
+    - Verify file integrity (check file size is approximately 2.2GB)
+    - _Requirements: 2.5_
+
+  - [ ] 3.2 Update config.json with Phi-3-mini configuration
+    - Change `llama_model_path` from "models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf" to "models/phi-3-mini-4k-instruct-q4.gguf"
+    - Change `llama_context_size` from 2048 to 4096 (leverage Phi-3-mini's 4K context window)
+    - Keep `llama_threads` at 4 (optimal for RPi 4B)
+    - Keep `llama_temperature` at 0.7 (balanced output)
+    - _Bug_Condition: isBugCondition(input) where input.action IN ['summarize', 'translate', 'explain', 'quiz', 'define'] AND input.source_text IS NOT NULL_
+    - _Expected_Behavior: Phi-3-mini SHALL process actual document text and produce factually grounded responses without hallucination (Property 1 from design)_
+    - _Preservation: All non-LLM operations SHALL produce identical behavior (Property 2 from design)_
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9_
+
+  - [ ] 3.3 (Optional) Enhance system prompts in conversation_agent.py
+    - Update `_llm_task` method to add explicit grounding instructions
+    - Add instruction: "Base your response ONLY on the provided text. Do not add information not present in the source."
+    - Emphasize conciseness: "Keep response under 100 words and optimized for text-to-speech."
+    - Increase document text limit from 8000 to 12000 characters to leverage 4K context window
+    - Update `_llm_general` method to improve conversational prompts for Phi-3-mini
+    - _Expected_Behavior: Improved instruction-following and reduced hallucination risk_
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [ ] 3.4 (Optional) Improve intent parsing prompts in intent_parser.py
+    - Update `_llm_parse` method to provide clearer intent parsing instructions
+    - Add few-shot examples of correct intent mappings
+    - Emphasize strict JSON output format to reduce parsing errors
+    - _Preservation: Intent parsing SHALL continue to work correctly or improve (Property 3 from design)_
+    - _Requirements: 3.3, 3.4_
+
+  - [ ] 3.5 Update README.md documentation
+    - Replace TinyLlama recommendation with Phi-3-mini
+    - Update download instructions with Phi-3-mini Hugging Face link
+    - Update performance expectations (2-4 tokens/sec on RPi 4B)
+    - Update model size information (~2.2GB for Q4_K_M quantization)
+    - Add MMLU benchmark comparison (58.8% TinyLlama vs 68.8% Phi-3-mini)
+    - Explain reduced hallucination risk with more capable model
+    - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5_
+
+  - [ ] 3.6 Verify bug condition exploration test now passes
+    - **Property 1: Expected Behavior** - Phi-3-mini Accurate Document Processing
+    - **IMPORTANT**: Re-run the SAME test from task 1 - do NOT write a new test
+    - The test from task 1 encodes the expected behavior
+    - When this test passes, it confirms the expected behavior is satisfied
+    - Run bug condition exploration test from step 1 with Phi-3-mini
+    - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
+    - Verify that Phi-3-mini generates responses grounded in source text:
+      - Physics PDF summarization uses actual physics content (no fictional websites)
+      - Biology PDF translation uses actual biology text (no unrelated braille content)
+      - Math PDF explanation uses actual math concepts (no fabricated explanations)
+    - Verify that key terms from source documents appear in LLM outputs
+    - Verify that no hallucinated content (fictional websites, unrelated topics) is present
+    - _Requirements: 2.1, 2.2, 2.3, 2.4_
+
+  - [ ] 3.7 Verify preservation tests still pass
+    - **Property 2: Preservation** - Non-LLM Functionality Unchanged
+    - **IMPORTANT**: Re-run the SAME tests from task 2 - do NOT write new tests
+    - Run preservation property tests from step 2 with Phi-3-mini
+    - **EXPECTED OUTCOME**: Tests PASS (confirms no regressions)
+    - Confirm all preservation properties still hold:
+      - PyMuPDF extraction produces identical text
+      - Direct reading produces identical chunked streaming
+      - Intent parsing produces identical (or improved) action mappings
+      - OCR produces identical text extraction
+      - Braille conversion produces identical dot patterns
+      - TTS produces identical audio output
+      - File management produces identical behavior
+      - Note-taking produces identical behavior
+    - Confirm all tests still pass after fix (no regressions)
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.9_
+
+- [ ] 4. Checkpoint - Ensure all tests pass
+  - Run complete test suite (bug condition test + preservation tests)
+  - Verify bug condition test passes (Phi-3-mini generates grounded responses)
+  - Verify all preservation tests pass (no regressions in non-LLM functionality)
+  - Test on Raspberry Pi 4B (8GB RAM) if available:
+    - Measure inference speed (target 2-4 tokens/sec)
+    - Measure memory usage (target <6GB)
+    - Measure end-to-end latency for summarization (target <10 seconds)
+  - If any tests fail, investigate root cause and iterate on fix
+  - Ask the user if questions arise or if manual testing is needed
