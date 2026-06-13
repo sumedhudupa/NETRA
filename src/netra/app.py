@@ -42,15 +42,20 @@ def _create_hardware_adapter(config):
         try:
             if getattr(config, "rpi_stepper_enabled", False) and config.rpi_stepper_motor_pins:
                 from netra.hardware.stepper_adapter import StepperHardwareAdapter
-                from netra.hardware.stub_adapter import StubHardwareAdapter
+                from netra.hardware.rpi_adapter import RaspberryPiHardwareAdapter
                 logger.info("Using Raspberry Pi Stepper hardware adapter with audio delegation")
                 
-                # Create stub adapter for audio delegation (no GPIO servo setup needed)
-                audio_adapter = StubHardwareAdapter(
+                # Create RPi adapter for audio and camera delegation (no GPIO servo setup needed)
+                audio_adapter = RaspberryPiHardwareAdapter(
                     audio_device=config.rpi_audio_device,
-                    sample_rate=config.audio_sample_rate,
                     audio_output_device=config.rpi_audio_output_device,
                     bt_speaker_mac=config.rpi_bt_speaker_mac,
+                    scroll_button_pin=config.rpi_gpio_scroll_button,
+                    status_led_pin=config.rpi_gpio_status_led,
+                    servo_pins=[], # No servos for the audio adapter
+                    usb_camera_device=config.usb_camera_device,
+                    usb_camera_width=config.usb_camera_width,
+                    usb_camera_height=config.usb_camera_height,
                 )
                 
                 return StepperHardwareAdapter(
