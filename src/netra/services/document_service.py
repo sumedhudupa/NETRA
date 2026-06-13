@@ -67,6 +67,7 @@ class DocumentService:
         chunks_with_confidence = self.ocr_service.extract_text_chunks_with_confidence(
             image,
             lines_per_chunk=lines_per_chunk,
+            fast_mode=True, # RAM optimization
         )
         if not chunks_with_confidence:
             return None
