@@ -284,12 +284,14 @@ class ConversationAgent:
 
     def _camera_capture_flow(self) -> None:
         try:
+            self._say("Capturing image from the camera, please hold steady.")
             image_path = self.hardware.capture_image_path()
             if not image_path or not Path(image_path).exists():
                 self._say("I could not access the camera. Please check the hardware connection.")
                 return
 
             self.logger.info("Camera image captured: %s", image_path)
+            self._say("Image captured, analyzing text now.")
             chunks = self.document_service.extract_ocr_chunks_from_camera_image(
                 image_path,
                 lines_per_chunk=self.ocr_lines_per_chunk,
@@ -304,6 +306,7 @@ class ConversationAgent:
             self.state.current_doc_name = "camera_capture"
             self.state.current_doc_path = image_path
             self._render_text_stream(chunks)
+            self._say("I have finished reading the captured text. What would you like to do next?")
         except Exception as exc:
             self.logger.error("Camera capture flow failed: %s", exc)
             self._say("Something went wrong during the camera capture process.")
@@ -311,6 +314,7 @@ class ConversationAgent:
     def _read_document_chunked(self, path: str) -> None:
         """Read a document using chunked streaming with config-based chunk sizes."""
         try:
+            self._say("Reading document, please listen.")
             text_chunks = self.document_service.extract_text_chunks(
                 path,
                 pdf_pages_per_chunk=self.pdf_pages_per_chunk,
@@ -324,6 +328,7 @@ class ConversationAgent:
             
             self.logger.info("Streaming %d text chunks from document", len(text_chunks))
             self._render_text_stream_with_delay(text_chunks)
+            self._say("Finished reading document. What would you like me to do next?")
         except Exception as exc:
             self.logger.error("Chunked document reading failed: %s", exc)
             self._say("I encountered an error while reading the document.")
@@ -371,6 +376,7 @@ class ConversationAgent:
             self._say("I encountered an error while trying to process the text.")
             return
         self._render_text(result)
+        self._say("What would you like me to do next?")
 
     def _llm_general(self, query: str) -> None:
         if not self.llama.is_available():
