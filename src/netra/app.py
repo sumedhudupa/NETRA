@@ -172,7 +172,7 @@ def run() -> None:
 
             if config.enable_wake_word:
                 stt.wait_for_wake(hardware, 3)
-
+            tts.speak("Listening for your command.", hardware)
             command = stt.listen_for_command(hardware, config.record_seconds)
             if not command.strip():
                 tts.speak("I did not catch that. Please say it again.", hardware)
