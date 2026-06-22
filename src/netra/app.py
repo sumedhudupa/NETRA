@@ -38,7 +38,37 @@ def _create_hardware_adapter(config):
 
     # Use RPi adapter if forced or auto-detected
     if mode == "rpi" or (mode == "auto" and is_raspberry_pi):
-        # Prefer stepper adapter if configured
+        # Prefer MCP23017 I2C expander adapter if configured
+        try:
+            if getattr(config, "mcp23017_enabled", False):
+                from netra.hardware.mcp23017_stepper_adapter import MCP23017StepperAdapter
+                from netra.hardware.rpi_adapter import RaspberryPiHardwareAdapter
+                logger.info("Using MCP23017 I2C stepper hardware adapter")
+
+                # Create RPi adapter for audio and camera delegation
+                audio_adapter = RaspberryPiHardwareAdapter(
+                    audio_device=config.rpi_audio_device,
+                    audio_output_device=config.rpi_audio_output_device,
+                    bt_speaker_mac=config.rpi_bt_speaker_mac,
+                    scroll_button_pin=config.rpi_gpio_scroll_button,
+                    status_led_pin=config.rpi_gpio_status_led,
+                    servo_pins=[],  # No servos needed
+                    usb_camera_device=config.usb_camera_device,
+                    usb_camera_width=config.usb_camera_width,
+                    usb_camera_height=config.usb_camera_height,
+                )
+
+                return MCP23017StepperAdapter(
+                    chip_addresses=getattr(config, "mcp23017_addresses", None) or [0x20],
+                    total_motors=getattr(config, "mcp23017_total_motors", 10),
+                    steps_per_rev=config.rpi_stepper_steps_per_revolution,
+                    step_delay_sec=config.rpi_stepper_step_delay_sec,
+                    audio_adapter=audio_adapter,
+                )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("MCP23017 adapter init failed: %s, trying stepper adapter", exc)
+
+        # Fallback: lgpio-driven stepper adapter if configured
         try:
             if getattr(config, "rpi_stepper_enabled", False) and config.rpi_stepper_motor_pins:
                 from netra.hardware.stepper_adapter import StepperHardwareAdapter
@@ -66,6 +96,7 @@ def _create_hardware_adapter(config):
                 )
         except Exception as exc:  # pragma: no cover
             logger.warning("Stepper adapter init failed: %s", exc)
+
 
         try:
             from netra.hardware.rpi_adapter import RaspberryPiHardwareAdapter

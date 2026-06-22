@@ -53,6 +53,11 @@ class NetraConfig:
     rpi_stepper_steps_per_revolution: float = 4076.0
     rpi_stepper_step_delay_sec: float = 0.0009
 
+    # MCP23017 I2C I/O expander stepper motor support
+    mcp23017_enabled: bool = False
+    mcp23017_addresses: Optional[List[int]] = None  # e.g. [0x20, 0x21, 0x22]
+    mcp23017_total_motors: int = 10
+
     usb_camera_device: str = "/dev/video0"
     usb_camera_width: int = 1920
     usb_camera_height: int = 1080
