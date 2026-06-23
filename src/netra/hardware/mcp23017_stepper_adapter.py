@@ -61,13 +61,16 @@ STEP_SEQUENCE = [
 ]
 
 # ─── Braille mapping: letter → (left_division, right_division) ─────
+# Motor 2 right_div values are negated (CCW) because Motor 2 is physically
+# flipped (inserted from the opposite side). Negative divisions drive the
+# motor counter-clockwise, reproducing the same physical dot patterns.
 BRAILLE_MAP = {
-    'a': (4, 0), 'b': (6, 0), 'c': (4, 4), 'd': (4, 6), 'e': (4, 2),
-    'f': (6, 4), 'g': (6, 6), 'h': (6, 2), 'i': (2, 4), 'j': (2, 6),
-    'k': (5, 0), 'l': (7, 0), 'm': (5, 4), 'n': (5, 6), 'o': (5, 2),
-    'p': (7, 4), 'q': (7, 6), 'r': (7, 2), 's': (3, 4), 't': (3, 6),
-    'u': (5, 1), 'v': (7, 1), 'w': (2, 7), 'x': (5, 5), 'y': (5, 7),
-    'z': (5, 3), ' ': (0, 0),
+    'a': (4,  0), 'b': (6,  0), 'c': (4, -4), 'd': (4, -6), 'e': (4, -2),
+    'f': (6, -4), 'g': (6, -6), 'h': (6, -2), 'i': (2, -4), 'j': (2, -6),
+    'k': (5,  0), 'l': (7,  0), 'm': (5, -4), 'n': (5, -6), 'o': (5, -2),
+    'p': (7, -4), 'q': (7, -6), 'r': (7, -2), 's': (3, -4), 't': (3, -6),
+    'u': (5, -1), 'v': (7, -1), 'w': (2, -7), 'x': (5, -5), 'y': (5, -7),
+    'z': (5, -3), ' ': (0,  0),
 }
 
 
