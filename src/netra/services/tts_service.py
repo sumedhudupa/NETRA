@@ -253,9 +253,13 @@ class TTSService:
         self.logger = logging.getLogger(__name__)
         self.voice = None
         self._sample_rate = 22050  # Piper default sample rate
+        self._sample_rate = 22050  # Piper default sample rate
         try:
             self.voice = PiperVoice.load(model_path)
             self.logger.info("Piper model loaded: %s", model_path)
+            # Try to read the actual sample rate from the loaded voice
+            if hasattr(self.voice, 'config') and hasattr(self.voice.config, 'sample_rate'):
+                self._sample_rate = self.voice.config.sample_rate
             # Try to read the actual sample rate from the loaded voice
             if hasattr(self.voice, 'config') and hasattr(self.voice.config, 'sample_rate'):
                 self._sample_rate = self.voice.config.sample_rate
