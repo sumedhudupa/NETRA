@@ -198,12 +198,17 @@ def go_home():
 # =====================================================
 # DISPLAY FOUR CHARS
 # =====================================================
+def transform_mapping(left_div, right_div):
+    left_div_new = ((left_div & 1) << 2) | (left_div & 2) | ((left_div & 4) >> 2)
+    right_div_new = abs(right_div)
+    return left_div_new, right_div_new
+
 def display_four_chars(c1, c2, c3, c4):
     """Display 4 characters simultaneously across 4 cells (8 motors)."""
-    m1, m2 = BRAILLE_MAP.get(c1.lower(), (0, 0))
-    m3, m4 = BRAILLE_MAP.get(c2.lower(), (0, 0))
-    m5, m6 = BRAILLE_MAP.get(c3.lower(), (0, 0))
-    m7, m8 = BRAILLE_MAP.get(c4.lower(), (0, 0))
+    m1, m2 = transform_mapping(*BRAILLE_MAP.get(c1.lower(), (0, 0)))
+    m3, m4 = transform_mapping(*BRAILLE_MAP.get(c2.lower(), (0, 0)))
+    m5, m6 = transform_mapping(*BRAILLE_MAP.get(c3.lower(), (0, 0)))
+    m7, m8 = transform_mapping(*BRAILLE_MAP.get(c4.lower(), (0, 0)))
 
     print("======================")
     print(f"Cell1: '{c1}' → M1={m1} M2={m2}")

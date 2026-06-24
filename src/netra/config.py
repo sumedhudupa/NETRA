@@ -59,8 +59,8 @@ class NetraConfig:
     mcp23017_total_motors: int = 8
 
     usb_camera_device: str = "/dev/video0"
-    usb_camera_width: int = 1920
-    usb_camera_height: int = 1080
+    usb_camera_width: int = 2592
+    usb_camera_height: int = 1944
     # OCR/PDF Chunking Settings
     ocr_lines_per_chunk: int = 2
     pdf_pages_per_chunk: int = 1

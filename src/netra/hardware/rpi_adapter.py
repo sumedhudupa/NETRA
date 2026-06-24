@@ -181,6 +181,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
                 "ffmpeg",
                 "-y",  # overwrite output files
                 "-f", "v4l2",
+                "-video_size", f"{self.usb_camera_width}x{self.usb_camera_height}",
                 "-i", self.usb_camera_device,
                 "-frames:v", "1",
                 output_path

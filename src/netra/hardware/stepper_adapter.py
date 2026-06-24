@@ -168,6 +168,12 @@ class StepperHardwareAdapter(HardwareAdapter):
         for pair_idx in range(cap):
             char = char_list[pair_idx].lower() if char_list[pair_idx] else ' '
             left_div, right_div = BRAILLE_MAP.get(char, (0, 0))
+            
+            # Motor 2 (right) maps to absolute positive value
+            right_div = abs(right_div)
+            # Motor 1 (left) uses 3-bit binary reversal
+            left_div = ((left_div & 1) << 2) | (left_div & 2) | ((left_div & 4) >> 2)
+
             left_motor_idx = pair_idx * 2 + 1
             right_motor_idx = pair_idx * 2 + 2
             

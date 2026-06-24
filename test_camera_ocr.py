@@ -305,7 +305,7 @@ def run_best_ocr(variants: "dict[str, np.ndarray]", lang: str, forced_psm: int |
 
 def test_capture_and_ocr(
     use_existing: bool = False,
-    input_image: str = "~/photo_hq.jpg",
+    input_image: str = "~/NETRA/photo_hq.jpg",
     output_dir: str = "test_output",
     width: int = 2592,
     height: int = 1944,
@@ -397,7 +397,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Capture image on Raspberry Pi and run OCR"
     )
-    parser.add_argument("--input-image", default="~/photo_hq.jpg",
+    parser.add_argument("--input-image", default="~/NETRA/photo_hq.jpg",
                         help="Output image path for capture (or existing image path with --use-existing)")
     parser.add_argument("--use-existing", action="store_true",
                         help="Skip capture and run OCR on --input-image")
