@@ -55,8 +55,8 @@ class NetraConfig:
 
     # MCP23017 I2C I/O expander stepper motor support
     mcp23017_enabled: bool = False
-    mcp23017_addresses: Optional[List[int]] = None  # e.g. [0x20, 0x21, 0x22]
-    mcp23017_total_motors: int = 10
+    mcp23017_addresses: Optional[List[int]] = None  # Configured to [0x20, 0x21] in initialization if None
+    mcp23017_total_motors: int = 8
 
     usb_camera_device: str = "/dev/video0"
     usb_camera_width: int = 1920

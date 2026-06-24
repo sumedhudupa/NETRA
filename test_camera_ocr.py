@@ -6,8 +6,7 @@ Standalone OCR test script optimized for Raspberry Pi.
 
 Expected workflow:
 1) Capture image separately (example):
-   rpicam-still --nopreview -t 3000 --width 2592 --height 1944 \
-     --quality 100 --encoding png -o ~/photo_hq.png
+   ffmpeg -f v4l2 -i /dev/video0 -frames:v 1 ~/photo_hq.jpg
 2) Run this script to preprocess + OCR + print extracted text.
 """
 
@@ -84,7 +83,7 @@ def capture_image(
     encoding: str,
     output_image: str | None = None,
 ) -> Path:
-    """Capture one image using rpicam-still and return file path."""
+    """Capture one image using ffmpeg and return file path."""
     logger = logging.getLogger(__name__)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -96,19 +95,12 @@ def capture_image(
         image_path = (output_dir / f"capture_{int(time.time())}.{suffix}").resolve()
 
     cmd = [
-        "rpicam-still",
-        "--nopreview",
-        "-t",
-        str(warmup_ms),
-        "--width",
-        str(width),
-        "--height",
-        str(height),
-        "--quality",
-        str(quality),
-        "--encoding",
-        encoding,
-        "-o",
+        "ffmpeg",
+        "-y",
+        "-f", "v4l2",
+        "-video_size", f"{width}x{height}",
+        "-i", "/dev/video0",
+        "-frames:v", "1",
         str(image_path),
     ]
 
@@ -116,7 +108,7 @@ def capture_image(
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(
-            "rpicam-still failed with exit code "
+            "ffmpeg failed with exit code "
             f"{result.returncode}. stderr: {result.stderr.strip()}"
         )
 
@@ -313,13 +305,13 @@ def run_best_ocr(variants: "dict[str, np.ndarray]", lang: str, forced_psm: int |
 
 def test_capture_and_ocr(
     use_existing: bool = False,
-    input_image: str = "~/photo_hq.png",
+    input_image: str = "~/photo_hq.jpg",
     output_dir: str = "test_output",
     width: int = 2592,
     height: int = 1944,
     warmup_ms: int = 3000,
     quality: int = 100,
-    encoding: str = "png",
+    encoding: str = "jpg",
     lang: str = "eng",
     fast_mode: bool = False,
     forced_psm: int | None = None,
@@ -405,7 +397,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Capture image on Raspberry Pi and run OCR"
     )
-    parser.add_argument("--input-image", default="~/photo_hq.png",
+    parser.add_argument("--input-image", default="~/photo_hq.jpg",
                         help="Output image path for capture (or existing image path with --use-existing)")
     parser.add_argument("--use-existing", action="store_true",
                         help="Skip capture and run OCR on --input-image")
@@ -417,8 +409,8 @@ def main():
                         help="Sensor warmup timeout in ms (default: 3000)")
     parser.add_argument("--quality", type=int, default=100,
                         help="Capture quality (default: 100)")
-    parser.add_argument("--encoding", default="png", choices=["png", "jpg"],
-                        help="Capture encoding (default: png)")
+    parser.add_argument("--encoding", default="jpg", choices=["png", "jpg"],
+                        help="Capture encoding (default: jpg)")
     parser.add_argument("--lang", default="eng",
                         help="Tesseract language (default: eng)")
     parser.add_argument("--psm", type=int, default=None,

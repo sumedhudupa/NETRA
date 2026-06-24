@@ -1,18 +1,25 @@
 #!/usr/bin/env python3
 
 # =====================================================
-# MANUAL STEPPER MOTOR DEGREE CONTROL  (4 motors)
-# Uses MCP23017 I2C expander (no direct GPIO)
+# MANUAL STEPPER MOTOR DEGREE CONTROL (8 motors)
+# Uses smbus2 + 2x MCP23017 I/O expander
 #
-# Wiring (MCP23017 at 0x20):
-#   GPA0-GPA3  →  Motor 1 IN1-IN4  (ULN2003)
-#   GPA4-GPA7  →  Motor 2 IN1-IN4  (ULN2003)
-#   GPB0-GPB3  →  Motor 3 IN1-IN4  (ULN2003)
-#   GPB4-GPB7  →  Motor 4 IN1-IN4  (ULN2003)
+# Wiring:
+# Chip 1 (0x20):
+#   GPA0-GPA3  →  Motor 1 IN1-IN4
+#   GPA4-GPA7  →  Motor 2 IN1-IN4
+#   GPB0-GPB3  →  Motor 3 IN1-IN4
+#   GPB4-GPB7  →  Motor 4 IN1-IN4
+#
+# Chip 2 (0x21):
+#   GPA0-GPA3  →  Motor 5 IN1-IN4
+#   GPA4-GPA7  →  Motor 6 IN1-IN4
+#   GPB0-GPB3  →  Motor 7 IN1-IN4
+#   GPB4-GPB7  →  Motor 8 IN1-IN4
 #
 # COMMANDS:
 #   1 CW  45     -> Motor 1 clockwise 45 degrees
-#   3 CCW 90     -> Motor 3 counter-clockwise 90 degrees
+#   8 CCW 90     -> Motor 8 counter-clockwise 90 degrees
 #   2 CW  45 50  -> Motor 2 CW 45 deg at speed 50 (1-100)
 #   exit         -> quit
 # =====================================================
@@ -23,48 +30,42 @@ import sys
 
 # ================= MCP23017 CONFIG =================
 I2C_BUS      = 1
-CHIP_ADDRESS = 0x20   # Change if A0/A1/A2 jumpers differ
+CHIP_ADDRESSES = [0x20, 0x21]
 
 IODIRA = 0x00
 IODIRB = 0x01
 GPIOA  = 0x12
 GPIOB  = 0x13
 
-# ================= MOTOR LAYOUT ON MCP23017 =================
-# motor_number → (port_register, bit_offset)
+# motor_number → (chip_addr, port_register, bit_offset)
 MOTOR_MAP = {
-    1: (GPIOA, 0),   # Motor 1: GPA bits 0-3
-    2: (GPIOA, 4),   # Motor 2: GPA bits 4-7
-    3: (GPIOB, 0),   # Motor 3: GPB bits 0-3
-    4: (GPIOB, 4),   # Motor 4: GPB bits 4-7
+    1: (0x20, GPIOA, 0),
+    2: (0x20, GPIOA, 4),
+    3: (0x20, GPIOB, 0),
+    4: (0x20, GPIOB, 4),
+    5: (0x21, GPIOA, 0),
+    6: (0x21, GPIOA, 4),
+    7: (0x21, GPIOB, 0),
+    8: (0x21, GPIOB, 4),
 }
 
 # ================= SETTINGS =================
 STEPS_PER_REVOLUTION = 4076.0
-DEGREES_PER_STEP     = 360.0 / STEPS_PER_REVOLUTION   # ~0.0883 deg/step
-DEFAULT_STEP_DELAY   = 0.0009                           # 900 us baseline
+DEGREES_PER_STEP     = 360.0 / STEPS_PER_REVOLUTION
+DEFAULT_STEP_DELAY   = 0.0009
 
-# ================= HALF-STEP SEQUENCE (4-bit patterns) =================
+# ================= HALF-STEP SEQUENCE =================
 STEP_SEQUENCE = [
-    0b0001,   # Step 0
-    0b0011,   # Step 1
-    0b0010,   # Step 2
-    0b0110,   # Step 3
-    0b0100,   # Step 4
-    0b1100,   # Step 5
-    0b1000,   # Step 6
-    0b1001,   # Step 7
+    0b0001, 0b0011, 0b0010, 0b0110,
+    0b0100, 0b1100, 0b1000, 0b1001,
 ]
 
 # ================= STATE =================
-step_index = {1: 0, 2: 0, 3: 0, 4: 0}
-bus        = None          # smbus2.SMBus instance
-port_cache = {}            # (addr, port_reg) → current 8-bit value
+step_index = {m: 0 for m in range(1, 9)}
+bus        = None
+port_cache = {}
 
-# =====================================================
-# SETUP
-# =====================================================
-
+# ================= SETUP =================
 def setup_mcp23017():
     global bus
     bus = smbus2.SMBus(I2C_BUS)
@@ -78,36 +79,31 @@ def setup_mcp23017():
         except Exception:
             pass
 
-    if CHIP_ADDRESS not in found:
-        print(f"❌ MCP23017 not found at 0x{CHIP_ADDRESS:02X}!")
-        if found:
-            print(f"   Devices found: {['0x%02X' % a for a in found]}")
-        bus.close()
-        sys.exit(1)
-
-    print(f"✅ MCP23017 found at 0x{CHIP_ADDRESS:02X}")
-
-    # Port A (motors 1 & 2): all outputs, all LOW
-    bus.write_byte_data(CHIP_ADDRESS, IODIRA, 0x00)
-    time.sleep(0.005)
-    bus.write_byte_data(CHIP_ADDRESS, GPIOA, 0x00)
-    time.sleep(0.005)
-    port_cache[(CHIP_ADDRESS, GPIOA)] = 0x00
-
-    # Port B (motors 3 & 4): all outputs, all LOW
-    bus.write_byte_data(CHIP_ADDRESS, IODIRB, 0x00)
-    time.sleep(0.005)
-    bus.write_byte_data(CHIP_ADDRESS, GPIOB, 0x00)
-    time.sleep(0.005)
-    port_cache[(CHIP_ADDRESS, GPIOB)] = 0x00
+    for addr in CHIP_ADDRESSES:
+        if addr not in found:
+            print(f"❌ MCP23017 not found at 0x{addr:02X}!")
+            if found:
+                print(f"   Devices found: {['0x%02X' % a for a in found]}")
+            bus.close()
+            sys.exit(1)
+        
+        print(f"✅ MCP23017 found at 0x{addr:02X}")
+        
+        bus.write_byte_data(addr, IODIRA, 0x00); time.sleep(0.005)
+        bus.write_byte_data(addr, GPIOA, 0x00); time.sleep(0.005)
+        port_cache[(addr, GPIOA)] = 0x00
+        
+        bus.write_byte_data(addr, IODIRB, 0x00); time.sleep(0.005)
+        bus.write_byte_data(addr, GPIOB, 0x00); time.sleep(0.005)
+        port_cache[(addr, GPIOB)] = 0x00
 
 
 def power_off_coils():
-    """Set all motor pins LOW on both ports."""
-    bus.write_byte_data(CHIP_ADDRESS, GPIOA, 0x00)
-    bus.write_byte_data(CHIP_ADDRESS, GPIOB, 0x00)
-    port_cache[(CHIP_ADDRESS, GPIOA)] = 0x00
-    port_cache[(CHIP_ADDRESS, GPIOB)] = 0x00
+    for addr in CHIP_ADDRESSES:
+        bus.write_byte_data(addr, GPIOA, 0x00)
+        bus.write_byte_data(addr, GPIOB, 0x00)
+        port_cache[(addr, GPIOA)] = 0x00
+        port_cache[(addr, GPIOB)] = 0x00
 
 
 def cleanup():
@@ -117,29 +113,26 @@ def cleanup():
     print("I2C bus closed.")
 
 # =====================================================
-# STEP MOTOR  (MCP23017 version)
+# STEP MOTOR (MCP23017 version)
 # =====================================================
-
 def step_motor(motor, direction):
     step_index[motor] += direction
     if step_index[motor] > 7: step_index[motor] = 0
     if step_index[motor] < 0: step_index[motor] = 7
 
-    port_reg, bit_offset = MOTOR_MAP[motor]
+    chip_addr, port_reg, bit_offset = MOTOR_MAP[motor]
     pattern = STEP_SEQUENCE[step_index[motor]]
 
-    key = (CHIP_ADDRESS, port_reg)
+    key = (chip_addr, port_reg)
     current = port_cache.get(key, 0x00)
     mask = 0x0F << bit_offset
     current = (current & ~mask) | ((pattern & 0x0F) << bit_offset)
-    bus.write_byte_data(CHIP_ADDRESS, port_reg, current)
+    bus.write_byte_data(chip_addr, port_reg, current)
     port_cache[key] = current
 
 # =====================================================
 # ROTATE BY DEGREES
-# speed: 1 (slowest) to 100 (fastest)
 # =====================================================
-
 def rotate_degrees(motor, direction, degrees, speed=50):
     steps = int(round(degrees / DEGREES_PER_STEP))
 
@@ -164,21 +157,19 @@ def rotate_degrees(motor, direction, degrees, speed=50):
 # =====================================================
 # PARSE INPUT
 # =====================================================
-
 def parse_and_run(raw):
     parts = raw.strip().split()
 
-    # Need at least: <motor> <dir> <degrees>
     if len(parts) < 3:
-        print("Usage: <motor 1-4> <CW|CCW> <degrees> [speed 1-100]")
+        print("Usage: <motor 1-8> <CW|CCW> <degrees> [speed 1-100]")
         return
 
     try:
         motor = int(parts[0])
-        if motor not in (1, 2, 3, 4):
+        if motor not in range(1, 9):
             raise ValueError
     except ValueError:
-        print("Motor must be 1, 2, 3, or 4.")
+        print("Motor must be between 1 and 8.")
         return
 
     direction = parts[1].upper()
@@ -194,7 +185,7 @@ def parse_and_run(raw):
         print("Degrees must be a positive number.")
         return
 
-    speed = 50  # default
+    speed = 50
     if len(parts) >= 4:
         try:
             speed = int(parts[3])
@@ -207,19 +198,17 @@ def parse_and_run(raw):
 # =====================================================
 # MAIN
 # =====================================================
-
 def main():
     setup_mcp23017()
 
     print("=========================================")
-    print("  STEPPER MANUAL CONTROL  (4 motors)")
+    print("  STEPPER MANUAL CONTROL  (8 motors)")
     print("=========================================")
-    print("  <motor 1-4> <CW|CCW> <degrees> [speed]")
+    print("  <motor 1-8> <CW|CCW> <degrees> [speed]")
     print("  Examples:")
     print("    1 CW  45        -> Motor 1, CW,  45 deg, speed 50")
-    print("    2 CCW 90        -> Motor 2, CCW, 90 deg, speed 50")
+    print("    8 CCW 90        -> Motor 8, CCW, 90 deg, speed 50")
     print("    3 CW  22.5 80   -> Motor 3, CW, 22.5 deg, speed 80")
-    print("    4 CCW 360 20    -> Motor 4, full CCW rotation, slow")
     print("  exit / Ctrl+C    -> quit")
     print("=========================================")
 

@@ -3,7 +3,7 @@
 Standalone test script for chunked OCR/PDF-to-braille streaming.
 
 Usage:
-    python test_ocr_braille_stream.py docs/sample.png
+    python test_ocr_braille_stream.py docs/sample.jpg
     python test_ocr_braille_stream.py docs/sample.pdf --pdf-pages-per-chunk 1
 """
 

@@ -165,9 +165,7 @@ try:
     import subprocess
     
     camera_commands = [
-        ('rpicam-still', ['rpicam-still', '-o', '/tmp/netra_camera_test.jpg', '-t', '1000', '-n']),
-        ('libcamera-still', ['libcamera-still', '-o', '/tmp/netra_camera_test.jpg', '-t', '1000', '-n']),
-        ('fswebcam', ['fswebcam', '-r', '640x480', '--no-banner', '/tmp/netra_camera_test.jpg']),
+        ('ffmpeg', ['ffmpeg', '-y', '-f', 'v4l2', '-i', '/dev/video0', '-frames:v', '1', '/tmp/netra_camera_test.jpg']),
     ]
 
     for command_name, command in camera_commands:
@@ -187,7 +185,7 @@ try:
         results['Camera'] = False
             
 except FileNotFoundError:
-    print("  ✗ Camera tools not installed (rpicam-still, libcamera-still, fswebcam)")
+    print("  ✗ Camera tools not installed (ffmpeg)")
     results['Camera'] = False
 except Exception as e:
     print(f"  ✗ Camera test failed: {e}")

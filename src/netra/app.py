@@ -59,8 +59,8 @@ def _create_hardware_adapter(config):
                 )
 
                 return MCP23017StepperAdapter(
-                    chip_addresses=getattr(config, "mcp23017_addresses", None) or [0x20],
-                    total_motors=getattr(config, "mcp23017_total_motors", 10),
+                    chip_addresses=getattr(config, "mcp23017_addresses", None) or [0x20, 0x21],
+                    total_motors=getattr(config, "mcp23017_total_motors", 8),
                     steps_per_rev=config.rpi_stepper_steps_per_revolution,
                     step_delay_sec=config.rpi_stepper_step_delay_sec,
                     audio_adapter=audio_adapter,
@@ -212,6 +212,17 @@ def run() -> None:
             logger.info("User command text: %s", command)
             intent = parser.parse(command, [doc.name for doc in documents])
             logger.info("Resolved intent: %s value=%s", intent.action, intent.value)
+
+            if intent.action == "open_not_found":
+                tts.speak_streaming([f"I could not find the file {intent.value}. Should I use intelligence to process this, or do you want to try again?"], hardware)
+                response = stt.listen_for_command(hardware, 5)
+                if response and ("intelligence" in response.lower() or "yes" in response.lower() or "process" in response.lower()):
+                    intent = parser._llm_parse(command, [doc.name for doc in documents])
+                    logger.info("Resolved LLM fallback intent: %s value=%s", intent.action, intent.value)
+                else:
+                    tts.speak_streaming(["Okay, let's try again."], hardware)
+                    continue
+
             agent.handle_intent(intent)
             
     except KeyboardInterrupt:

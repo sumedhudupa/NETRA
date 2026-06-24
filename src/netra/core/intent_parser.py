@@ -13,6 +13,9 @@ class IntentParser:
 
     def parse(self, command: str, doc_names: List[str]) -> CommandIntent:
         text = command.strip().lower()
+        if text.startswith("and "):
+            text = text[4:].strip()
+            
         if not text:
             return CommandIntent("unknown")
 
@@ -69,6 +72,7 @@ class IntentParser:
 
         if text.startswith("open "):
             query = text.replace("open ", "", 1).strip()
+
             cleaned_query = self._normalize_open_query(query)
             if cleaned_query in {"", "file", "document"}:
                 if len(doc_names) == 1:
@@ -81,7 +85,7 @@ class IntentParser:
                     return CommandIntent("open_by_name", closest)
                 if len(doc_names) == 1 and self._looks_like_stt_open_error(cleaned_query or query):
                     return CommandIntent("open_by_name", doc_names[0])
-                return CommandIntent("open_by_name", cleaned_query or query)
+                return CommandIntent("open_not_found", cleaned_query or query)
 
         llm_intent = self._llm_parse(text, doc_names)
         return llm_intent if llm_intent.action != "unknown" else CommandIntent("general_query", text)

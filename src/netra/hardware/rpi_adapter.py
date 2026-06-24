@@ -144,20 +144,6 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         """Initialize camera on first use."""
         if self.camera is not None:
             return True
-            
-        if PICAMERA_AVAILABLE:
-            try:
-                self.camera = Picamera2()
-                config = self.camera.create_still_configuration(
-                    main={"size": (1920, 1080)},
-                    lores={"size": (640, 480)},
-                    display="lores"
-                )
-                self.camera.configure(config)
-                self.logger.info("Pi Camera initialized successfully")
-                return True
-            except Exception as exc:
-                self.logger.warning("Pi Camera init failed: %s, trying USB webcam", exc)
         
         # Check for USB webcam using v4l2
         try:
@@ -169,6 +155,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
             )
             if result.returncode == 0 and "/dev/video" in result.stdout:
                 self.logger.info("USB webcam detected via v4l2")
+                self.camera = "usb"
                 return True
         except Exception as exc:
             self.logger.warning("No camera available: %s", exc)
@@ -177,7 +164,7 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
     
     def capture_image_path(self) -> str:
         """
-        Capture image from Pi Camera or USB webcam.
+        Capture image from USB webcam using ffmpeg.
         Returns path to captured image file.
         """
         # Blink status LED to indicate capture
@@ -188,77 +175,31 @@ class RaspberryPiHardwareAdapter(HardwareAdapter):
         timestamp = int(time.time())
         output_path = str(output_dir / f"capture_{timestamp}.jpg")
         
-        # Try Pi Camera first
-        if PICAMERA_AVAILABLE and self._initialize_camera():
-            try:
-                self.camera.start()
-                time.sleep(0.5)  # Let camera adjust
-                self.camera.capture_file(output_path)
-                self.camera.stop()
-                self.logger.info("Image captured with Pi Camera: %s", output_path)
-                return output_path
-            except Exception as exc:
-                self.logger.warning("Pi Camera capture failed: %s", exc)
-
-        # Prefer the Raspberry Pi CLI camera stack for CSI cameras on newer OS releases.
-        for camera_command in ("rpicam-still", "libcamera-still"):
-            try:
-                command = [
-                    camera_command,
-                    "-o", output_path,
-                    "--width", str(self.usb_camera_width),
-                    "--height", str(self.usb_camera_height),
-                    "-t", "1000",
-                    "-n",  # No preview
-                ]
-                result = subprocess.run(command, capture_output=True, text=True, timeout=15)
-                if result.returncode == 0 and Path(output_path).exists():
-                    self.logger.info("Image captured with %s: %s", camera_command, output_path)
-                    return output_path
-                self.logger.debug(
-                    "%s failed with code %s: %s",
-                    camera_command,
-                    result.returncode,
-                    (result.stderr or result.stdout or "").strip(),
-                )
-            except FileNotFoundError:
-                self.logger.debug("%s not installed", camera_command)
-            except Exception as exc:
-                self.logger.error("%s capture failed: %s", camera_command, exc)
-        
-        # Fallback to fswebcam for USB webcam
+        # Use ffmpeg for USB camera capture
         try:
-            result = subprocess.run(
-                [
-                    "fswebcam",
-                    "-d", self.usb_camera_device,
-                    "-r", f"{self.usb_camera_width}x{self.usb_camera_height}",
-                    "--no-banner",
-                    "-S", "10",  # Skip 10 frames for auto-exposure
-                    output_path
-                ],
-                capture_output=True,
-                text=True,
-                timeout=15
-            )
+            command = [
+                "ffmpeg",
+                "-y",  # overwrite output files
+                "-f", "v4l2",
+                "-i", self.usb_camera_device,
+                "-frames:v", "1",
+                output_path
+            ]
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15)
             if result.returncode == 0 and Path(output_path).exists():
-                self.logger.info(
-                    "Image captured with fswebcam device %s at %sx%s: %s",
-                    self.usb_camera_device,
-                    self.usb_camera_width,
-                    self.usb_camera_height,
-                    output_path,
-                )
+                self.logger.info("Image captured with ffmpeg: %s", output_path)
                 return output_path
             self.logger.debug(
-                "fswebcam failed with code %s: %s",
+                "ffmpeg failed with code %s: %s",
                 result.returncode,
                 (result.stderr or result.stdout or "").strip(),
             )
+        except FileNotFoundError:
+            self.logger.debug("ffmpeg not installed")
         except Exception as exc:
             self.logger.error("USB webcam capture failed: %s", exc)
         
-        self.logger.error("All camera capture methods failed")
+        self.logger.error("Camera capture failed")
         return ""
     
     def wait_for_scroll(self) -> None:
