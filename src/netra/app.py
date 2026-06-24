@@ -184,17 +184,17 @@ def run() -> None:
     parser = IntentParser(llama)
 
     logger.info("NETRA services initialized")
-    tts.speak("NETRA is ready. You can speak naturally at any time.", hardware)
+    tts.speak_streaming(["NETRA is ready. You can speak naturally at any time."], hardware)
 
     if documents:
         first = ", ".join(Path(doc.name).stem.replace("_", " ") for doc in documents[:5])
-        tts.speak(f"I found {len(documents)} documents. The first items are {first}", hardware)
+        tts.speak_streaming([f"I found {len(documents)} documents. The first items are {first}"], hardware)
         logger.info("Discovered %d documents", len(documents))
     else:
-        tts.speak("I could not find any documents in your folder.", hardware)
+        tts.speak_streaming(["I could not find any documents in your folder."], hardware)
         logger.warning("No documents found in %s", config.docs_dir)
 
-    tts.speak("What would you like me to do?", hardware)
+    tts.speak_streaming(["What would you like me to do?"], hardware)
 
     try:
         while state.running:
@@ -203,10 +203,10 @@ def run() -> None:
 
             if config.enable_wake_word:
                 stt.wait_for_wake(hardware, 3)
-            tts.speak("Listening for your command.", hardware)
+            tts.speak_streaming(["Listening for your command."], hardware)
             command = stt.listen_for_command(hardware, config.record_seconds)
             if not command.strip():
-                tts.speak("I did not catch that. Please say it again.", hardware)
+                tts.speak_streaming(["I did not catch that. Please say it again."], hardware)
                 continue
             
             logger.info("User command text: %s", command)
@@ -216,10 +216,10 @@ def run() -> None:
             
     except KeyboardInterrupt:
         logger.info("Shutdown requested by user")
-        tts.speak("Goodbye.", hardware)
+        tts.speak_streaming(["Goodbye."], hardware)
     except Exception as exc:
         logger.critical("Fatal error in main loop: %s", exc)
-        tts.speak("I have encountered a critical system error and need to restart. I am sorry for the interruption.", hardware)
+        tts.speak_streaming(["I have encountered a critical system error and need to restart. I am sorry for the interruption."], hardware)
         raise
     finally:
         # Cleanup hardware resources

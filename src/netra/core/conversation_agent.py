@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import List
 import logging
 import time
+import threading
+import queue
 
 from netra.models.types import CommandIntent, DocumentRef, SessionState
 from netra.services.braille_service import BrailleService
@@ -48,6 +50,21 @@ class ConversationAgent:
         self.ocr_lines_per_chunk = ocr_lines_per_chunk
         self.pdf_pages_per_chunk = pdf_pages_per_chunk
         self.braille_display_delay = braille_display_delay
+        
+        # Dedicated thread for braille rendering so it doesn't block audio
+        self._braille_queue: queue.Queue[str | None] = queue.Queue()
+        self._braille_thread = threading.Thread(target=self._braille_worker, daemon=True)
+        self._braille_thread.start()
+
+    def _braille_worker(self) -> None:
+        while True:
+            text = self._braille_queue.get()
+            if text is None:
+                break
+            try:
+                self._render_braille_text(text)
+            except Exception as exc:
+                self.logger.error("Braille rendering failed: %s", exc)
 
     def handle_intent(self, intent: CommandIntent) -> None:
         action = intent.action
@@ -346,8 +363,12 @@ class ConversationAgent:
 
         for chunk_index, chunk in enumerate(cleaned_chunks, start=1):
             self.logger.info("Streaming chunk %d/%d", chunk_index, len(cleaned_chunks))
-            self.tts.speak(chunk, self.hardware)
-            self._render_braille_text(chunk)
+        
+        self.tts.speak_streaming(
+            iter(cleaned_chunks),
+            self.hardware,
+            on_sentence=self._braille_queue.put
+        )
 
     def _llm_task(self, instruction: str, source_text: str) -> None:
         if not source_text:
@@ -370,12 +391,20 @@ class ConversationAgent:
         )
         prompt = f"{instruction}.\n\nText:\n{source_text[:12000]}"
         try:
-            result = self.llama.generate(prompt, system=system_prompt, timeout=90, temperature=0.2, max_tokens=192)
+            sentence_iter = self.llama.generate_streaming(
+                prompt, system=system_prompt, timeout=90, temperature=0.2, max_tokens=192
+            )
+            full_text = self.tts.speak_streaming(
+                sentence_iter, self.hardware, on_sentence=self._braille_queue.put
+            )
         except Exception as exc:
             self.logger.error("LLM task failed: %s", exc)
             self._say("I encountered an error while trying to process the text.")
             return
-        self._render_text(result)
+
+        if full_text and full_text.strip():
+            self.state.last_output = full_text
+            self._export_braille_text(full_text)
         self._say("What would you like me to do next?")
 
     def _llm_general(self, query: str) -> None:
@@ -392,8 +421,14 @@ class ConversationAgent:
             "If the user says thank you, respond warmly and briefly."
         )
         try:
-            result = self.llama.generate(query, system=system_prompt, timeout=60, max_tokens=96)
-            self._say(result)
+            sentence_iter = self.llama.generate_streaming(
+                query, system=system_prompt, timeout=60, max_tokens=96
+            )
+            full_text = self.tts.speak_streaming(
+                sentence_iter, self.hardware, on_sentence=self._braille_queue.put
+            )
+            if full_text and full_text.strip():
+                self.state.last_output = full_text
         except Exception as exc:
             self.logger.error("General LLM query failed: %s", exc)
             self._say("I was unable to process your request.")
@@ -405,9 +440,18 @@ class ConversationAgent:
 
         self.state.last_output = text
 
-        self.tts.speak(text, self.hardware)
+        # Simple sentence splitter for static text
+        import re
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+        if not sentences:
+            sentences = [text]
+
+        self.tts.speak_streaming(
+            iter(sentences), 
+            self.hardware,
+            on_sentence=self._braille_queue.put
+        )
         self._export_braille_text(text)
-        self._render_braille_text(text)
 
     def _render_text_stream(self, chunks: List[str]) -> None:
         cleaned_chunks = [chunk.strip() for chunk in chunks if chunk and chunk.strip()]
@@ -419,9 +463,11 @@ class ConversationAgent:
         self.state.last_output = full_text
         self._export_braille_text(full_text)
 
-        for chunk in cleaned_chunks:
-            self.tts.speak(chunk, self.hardware)
-            self._render_braille_text(chunk)
+        self.tts.speak_streaming(
+            iter(cleaned_chunks),
+            self.hardware,
+            on_sentence=self._braille_queue.put
+        )
 
     def _export_braille_text(self, text: str) -> None:
         _, patterns = self.braille.text_to_patterns(text)
@@ -460,4 +506,4 @@ class ConversationAgent:
 
     def _say(self, text: str) -> None:
         self.state.last_output = text
-        self.tts.speak(text, self.hardware)
+        self.tts.speak_streaming([text], self.hardware)
