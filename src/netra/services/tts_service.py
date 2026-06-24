@@ -128,6 +128,123 @@ class AudioStreamPlayer:
                 pass
             self._stream = None
 
+# Optional: sounddevice for in-memory audio streaming (avoids disk I/O + subprocess)
+try:
+    import sounddevice as sd
+    _SD_AVAILABLE = True
+except (ImportError, OSError):
+    sd = None
+    _SD_AVAILABLE = False
+
+
+class AudioStreamPlayer:
+    """
+    In-memory PCM audio player using sounddevice.
+
+    Accepts raw int16 PCM bytes and plays them through the system default
+    audio output (which is the BT speaker if already connected via PulseAudio).
+
+    Usage::
+
+        player = AudioStreamPlayer(sample_rate=22050)
+        player.start()
+        player.enqueue(pcm_bytes_sentence_1)
+        player.enqueue(pcm_bytes_sentence_2)
+        player.drain()   # blocks until all audio finishes playing
+        player.close()
+    """
+
+    def __init__(self, sample_rate: int = 22050, channels: int = 1, block_size: int = 1024) -> None:
+        self.logger = logging.getLogger(__name__)
+        self.sample_rate = sample_rate
+        self.channels = channels
+        self.block_size = block_size
+        self._queue: queue.Queue[bytes | None] = queue.Queue(maxsize=200)
+        self._stream = None
+        self._leftover = b""
+        self._finished = threading.Event()
+
+    def start(self) -> None:
+        """Open the audio output stream."""
+        if not _SD_AVAILABLE:
+            self.logger.warning("sounddevice not available; AudioStreamPlayer will not produce audio")
+            return
+
+        bytes_per_frame = 2 * self.channels  # int16
+        self._stream = sd.RawOutputStream(
+            samplerate=self.sample_rate,
+            channels=self.channels,
+            dtype="int16",
+            blocksize=self.block_size,
+            callback=self._audio_callback,
+            finished_callback=self._on_stream_finished,
+        )
+        self._stream.start()
+        self.logger.debug("AudioStreamPlayer started (rate=%d)", self.sample_rate)
+
+    def _audio_callback(self, outdata, frames, time_info, status):
+        """
+        sounddevice callback – fills the output buffer from the queue.
+        Runs in a separate audio thread.
+        """
+        if status:
+            self.logger.debug("Audio stream status: %s", status)
+
+        bytes_needed = frames * 2 * self.channels  # int16 = 2 bytes per sample
+        data = self._leftover
+
+        while len(data) < bytes_needed:
+            try:
+                chunk = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            if chunk is None:
+                # Sentinel: no more data coming.  Pad with silence and signal done.
+                data += b"\x00" * (bytes_needed - len(data))
+                outdata[:] = data[:bytes_needed]
+                self._leftover = b""
+                raise sd.CallbackStop
+            data += chunk
+
+        if len(data) >= bytes_needed:
+            outdata[:] = data[:bytes_needed]
+            self._leftover = data[bytes_needed:]
+        else:
+            # Underrun – fill what we have, pad the rest with silence
+            outdata[:len(data)] = data
+            outdata[len(data):] = b"\x00" * (bytes_needed - len(data))
+            self._leftover = b""
+
+    def _on_stream_finished(self):
+        """Called by sounddevice when the stream stops."""
+        self._finished.set()
+
+    def enqueue(self, pcm_bytes: bytes) -> None:
+        """Add raw PCM bytes to the playback queue."""
+        if not self._stream:
+            return
+        # Break large buffers into manageable chunks for responsive callback
+        chunk_size = self.block_size * 2 * self.channels
+        for i in range(0, len(pcm_bytes), chunk_size):
+            self._queue.put(pcm_bytes[i:i + chunk_size])
+
+    def drain(self) -> None:
+        """Block until all enqueued audio has been played."""
+        if not self._stream:
+            return
+        self._queue.put(None)  # Sentinel
+        self._finished.wait(timeout=120)
+
+    def close(self) -> None:
+        """Stop and close the audio stream."""
+        if self._stream:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+
 
 class TTSService:
     PLAYBACK_LEADIN_MS = 250

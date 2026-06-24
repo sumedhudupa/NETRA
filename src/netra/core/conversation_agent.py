@@ -405,6 +405,7 @@ class ConversationAgent:
         if full_text and full_text.strip():
             self.state.last_output = full_text
             self._export_braille_text(full_text)
+            self._render_braille_text(full_text)
         self._say("What would you like me to do next?")
 
     def _llm_general(self, query: str) -> None:
